@@ -10,14 +10,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/llm/models"
 	toolsPkg "github.com/ETEllis/teamcode/internal/llm/tools"
 	"github.com/ETEllis/teamcode/internal/logging"
 	"github.com/ETEllis/teamcode/internal/message"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/shared"
 )
 
 type copilotOptions struct {
@@ -124,7 +124,7 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		}
 
 		if githubToken == "" {
-			logging.Error("GitHub token is required for Copilot provider. Set GITHUB_TOKEN, configure it in .teamcode.json, or ensure GitHub CLI/Copilot is properly authenticated.")
+			logging.Error("GitHub token is required for Copilot provider. Set GITHUB_TOKEN, configure it in .teamcode.json or .opencode.json, or ensure GitHub CLI/Copilot is properly authenticated.")
 			return &copilotClient{
 				providerOptions: opts,
 				options:         copilotOpts,

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ETEllis/teamcode/internal/logging"
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/ETEllis/teamcode/internal/logging"
 )
 
 var (

@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ETEllis/teamcode/internal/config"
-	"github.com/ETEllis/teamcode/internal/tui/theme"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -17,6 +15,8 @@ import (
 	"github.com/aymanbagabas/go-udiff"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/ETEllis/teamcode/internal/config"
+	"github.com/ETEllis/teamcode/internal/tui/theme"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 

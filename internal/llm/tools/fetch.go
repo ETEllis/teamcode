@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ETEllis/teamcode/internal/config"
-	"github.com/ETEllis/teamcode/internal/permission"
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/ETEllis/teamcode/internal/config"
+	"github.com/ETEllis/teamcode/internal/permission"
 )
 
 type FetchParams struct {
