@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/completions"
 	"github.com/ETEllis/teamcode/internal/message"
@@ -13,9 +16,6 @@ import (
 	"github.com/ETEllis/teamcode/internal/tui/components/dialog"
 	"github.com/ETEllis/teamcode/internal/tui/layout"
 	"github.com/ETEllis/teamcode/internal/tui/util"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 var ChatPage PageID = "chat"
@@ -154,7 +154,10 @@ func (p *chatPage) clearSidebar() tea.Cmd {
 }
 
 func (p *chatPage) sendMessage(text string, attachments []message.Attachment) tea.Cmd {
-	// Check if CoderAgent is available
+	if slashCmd := p.resolveSlashCommand(strings.TrimSpace(text)); slashCmd != nil {
+		return slashCmd
+	}
+
 	if p.app.CoderAgent == nil {
 		return util.ReportError(fmt.Errorf("no AI provider configured: please set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another supported provider API key"))
 	}
@@ -179,6 +182,37 @@ func (p *chatPage) sendMessage(text string, attachments []message.Attachment) te
 		return util.ReportError(err)
 	}
 	return tea.Batch(cmds...)
+}
+
+func (p *chatPage) resolveSlashCommand(text string) tea.Cmd {
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+
+	commandName := strings.TrimPrefix(text, "/")
+	if commandName == "" {
+		return util.CmdHandler(dialog.ShowCommandDialogMsg{})
+	}
+
+	switch commandName {
+	case "init":
+		return util.CmdHandler(chat.SendMsg{Text: dialog.InitProjectPrompt()})
+	}
+
+	commands, err := dialog.LoadCustomCommands()
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	for _, command := range commands {
+		if commandName == command.ID ||
+			commandName == strings.TrimPrefix(command.ID, dialog.UserCommandPrefix) ||
+			commandName == strings.TrimPrefix(command.ID, dialog.ProjectCommandPrefix) {
+			return command.Handler(command)
+		}
+	}
+
+	return util.ReportWarn(fmt.Sprintf("Unknown command: /%s", commandName))
 }
 
 func (p *chatPage) SetSize(width, height int) tea.Cmd {

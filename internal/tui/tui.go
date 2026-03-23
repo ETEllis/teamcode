@@ -35,8 +35,6 @@ type keyMap struct {
 	SwitchTheme   key.Binding
 }
 
-type startCompactSessionMsg struct{}
-
 const (
 	quitKey = "q"
 )
@@ -303,7 +301,17 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showCommandDialog = false
 		return a, nil
 
-	case startCompactSessionMsg:
+	case dialog.ShowCommandDialogMsg:
+		if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showThemeDialog && !a.showFilepicker {
+			if len(a.commands) == 0 {
+				return a, util.ReportWarn("No commands available")
+			}
+			a.commandDialog.SetCommands(a.commands)
+			a.showCommandDialog = true
+		}
+		return a, nil
+
+	case dialog.StartCompactSessionMsg:
 		// Start compacting the current session
 		a.isCompacting = true
 		a.compactingMessage = "Starting summarization..."
@@ -339,7 +347,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			contextWindow := model.ContextWindow
 			tokens := a.selectedSession.CompletionTokens + a.selectedSession.PromptTokens
 			if (tokens >= int64(float64(contextWindow)*0.95)) && config.Get().AutoCompact {
-				return a, util.CmdHandler(startCompactSessionMsg{})
+				return a, util.CmdHandler(dialog.StartCompactSessionMsg{})
 			}
 		}
 		// Continue listening for events
@@ -932,16 +940,9 @@ func New(app *app.App) tea.Model {
 		Title:       "Initialize Project",
 		Description: "Create/Update the TeamCode.md memory file",
 		Handler: func(cmd dialog.Command) tea.Cmd {
-			prompt := `Please analyze this codebase and create a TeamCode.md file containing:
-1. Build/lint/test commands - especially for running a single test
-2. Code style guidelines including imports, formatting, types, naming conventions, error handling, etc.
-
-The file you create will be given to agentic coding agents (such as yourself) that operate in this repository. Make it about 20 lines long.
-If there's already a teamcode.md or opencode.md, improve it.
-If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (in .github/copilot-instructions.md), make sure to include them.`
 			return tea.Batch(
 				util.CmdHandler(chat.SendMsg{
-					Text: prompt,
+					Text: dialog.InitProjectPrompt(),
 				}),
 			)
 		},
@@ -953,7 +954,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Description: "Summarize the current session and create a new one with the summary",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return func() tea.Msg {
-				return startCompactSessionMsg{}
+				return dialog.StartCompactSessionMsg{}
 			}
 		},
 	})
