@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/tui/util"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Command prefix constants
@@ -29,8 +29,19 @@ func LoadCustomCommands() ([]Command, error) {
 	}
 
 	var commands []Command
+	seen := map[string]bool{}
 
-	// Load user commands from XDG_CONFIG_HOME/opencode/commands
+	appendCommands := func(next []Command) {
+		for _, command := range next {
+			if seen[command.ID] {
+				continue
+			}
+			seen[command.ID] = true
+			commands = append(commands, command)
+		}
+	}
+
+	// Load user commands from XDG_CONFIG_HOME/teamcode/commands first, then legacy opencode paths.
 	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfigHome == "" {
 		// Default to ~/.config if XDG_CONFIG_HOME is not set
@@ -41,26 +52,34 @@ func LoadCustomCommands() ([]Command, error) {
 	}
 
 	if xdgConfigHome != "" {
-		userCommandsDir := filepath.Join(xdgConfigHome, "opencode", "commands")
-		userCommands, err := loadCommandsFromDir(userCommandsDir, UserCommandPrefix)
-		if err != nil {
-			// Log error but continue - we'll still try to load other commands
-			fmt.Printf("Warning: failed to load user commands from XDG_CONFIG_HOME: %v\n", err)
-		} else {
-			commands = append(commands, userCommands...)
+		userCommandsDirs := []string{
+			filepath.Join(xdgConfigHome, "teamcode", "commands"),
+			filepath.Join(xdgConfigHome, "opencode", "commands"),
+		}
+		for _, userCommandsDir := range userCommandsDirs {
+			userCommands, err := loadCommandsFromDir(userCommandsDir, UserCommandPrefix)
+			if err != nil {
+				fmt.Printf("Warning: failed to load user commands from %s: %v\n", userCommandsDir, err)
+				continue
+			}
+			appendCommands(userCommands)
 		}
 	}
 
-	// Load commands from $HOME/.opencode/commands
+	// Load commands from $HOME/.teamcode/commands first, then legacy $HOME/.opencode/commands.
 	home, err := os.UserHomeDir()
 	if err == nil {
-		homeCommandsDir := filepath.Join(home, ".opencode", "commands")
-		homeCommands, err := loadCommandsFromDir(homeCommandsDir, UserCommandPrefix)
-		if err != nil {
-			// Log error but continue - we'll still try to load other commands
-			fmt.Printf("Warning: failed to load home commands: %v\n", err)
-		} else {
-			commands = append(commands, homeCommands...)
+		homeCommandsDirs := []string{
+			filepath.Join(home, ".teamcode", "commands"),
+			filepath.Join(home, ".opencode", "commands"),
+		}
+		for _, homeCommandsDir := range homeCommandsDirs {
+			homeCommands, err := loadCommandsFromDir(homeCommandsDir, UserCommandPrefix)
+			if err != nil {
+				fmt.Printf("Warning: failed to load home commands from %s: %v\n", homeCommandsDir, err)
+				continue
+			}
+			appendCommands(homeCommands)
 		}
 	}
 
@@ -71,7 +90,7 @@ func LoadCustomCommands() ([]Command, error) {
 		// Log error but return what we have so far
 		fmt.Printf("Warning: failed to load project commands: %v\n", err)
 	} else {
-		commands = append(commands, projectCommands...)
+		appendCommands(projectCommands)
 	}
 
 	return commands, nil

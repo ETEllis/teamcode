@@ -2,7 +2,7 @@ package team
 
 import (
 	"context"
-	"encoding/json"
+	"time"
 )
 
 type TaskBoard struct {
@@ -13,134 +13,162 @@ type TaskBoard struct {
 }
 
 type TaskBoardService struct {
-	caller *PythonCaller
+	store *store
 }
 
-func NewTaskBoardService() *TaskBoardService {
-	return &TaskBoardService{
-		caller: NewPythonCaller(),
+func NewTaskBoardService(sharedStore *store) *TaskBoardService {
+	return &TaskBoardService{store: sharedStore}
+}
+
+func defaultBoard(teamName string) *TaskBoard {
+	return &TaskBoard{
+		TeamName: teamName,
+		Columns: map[string][]string{
+			"backlog":     {},
+			"ready":       {},
+			"in_progress": {},
+			"in_review":   {},
+			"done":        {},
+			"blocked":     {},
+		},
+		Assignments: map[string]string{},
+		Constraints: map[string]any{
+			"maxWip":    3,
+			"updatedAt": time.Now().UnixMilli(),
+		},
 	}
 }
 
 func (s *TaskBoardService) CreateBoard(ctx context.Context, teamName string) (*TaskBoard, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "create_task_board", map[string]any{
-		"team_name": teamName,
-	})
+	_ = ctx
+	board, err := s.ReadBoard(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var board TaskBoard
-	if err := json.Unmarshal(result, &board); err != nil {
-		return nil, err
+	if board == nil {
+		board = defaultBoard(teamName)
+		if err := s.store.writeJSON(teamName, "task_board.json", board); err != nil {
+			return nil, err
+		}
 	}
-	return &board, nil
+	return board, nil
 }
 
 func (s *TaskBoardService) ReadBoard(ctx context.Context, teamName string) (*TaskBoard, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "read_task_board", map[string]any{
-		"team_name": teamName,
-	})
-	if err != nil {
+	_ = ctx
+	var board TaskBoard
+	if err := s.store.readJSON(teamName, "task_board.json", &board); err != nil {
 		return nil, err
 	}
-
-	var board TaskBoard
-	if err := json.Unmarshal(result, &board); err != nil {
-		return nil, err
+	if board.TeamName == "" {
+		return nil, nil
 	}
 	return &board, nil
 }
 
 func (s *TaskBoardService) MoveTask(ctx context.Context, teamName, taskID, fromColumn, toColumn string, agent string) (*TaskBoard, error) {
-	kwargs := map[string]any{
-		"team_name":   teamName,
-		"task_id":     taskID,
-		"from_column": fromColumn,
-		"to_column":   toColumn,
-	}
-	if agent != "" {
-		kwargs["agent"] = agent
-	}
-
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "move_task", kwargs)
+	_ = ctx
+	board, err := s.CreateBoard(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var board TaskBoard
-	if err := json.Unmarshal(result, &board); err != nil {
+	if board.Columns == nil {
+		board.Columns = defaultBoard(teamName).Columns
+	}
+	if fromColumn != "" {
+		board.Columns[fromColumn] = removeTask(board.Columns[fromColumn], taskID)
+	}
+	for column, tasks := range board.Columns {
+		if column != fromColumn {
+			board.Columns[column] = removeTask(tasks, taskID)
+		}
+	}
+	board.Columns[toColumn] = appendUnique(board.Columns[toColumn], taskID)
+	if agent != "" {
+		board.Assignments[taskID] = agent
+	}
+	board.Constraints["updatedAt"] = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "task_board.json", board); err != nil {
 		return nil, err
 	}
-	return &board, nil
+	return board, nil
 }
 
 func (s *TaskBoardService) AddTaskToColumn(ctx context.Context, teamName, taskID, column string) (*TaskBoard, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "add_task_to_column", map[string]any{
-		"team_name": teamName,
-		"task_id":   taskID,
-		"column":    column,
-	})
+	_ = ctx
+	board, err := s.CreateBoard(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var board TaskBoard
-	if err := json.Unmarshal(result, &board); err != nil {
+	if board.Columns == nil {
+		board.Columns = defaultBoard(teamName).Columns
+	}
+	board.Columns[column] = appendUnique(board.Columns[column], taskID)
+	board.Constraints["updatedAt"] = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "task_board.json", board); err != nil {
 		return nil, err
 	}
-	return &board, nil
+	return board, nil
 }
 
 func (s *TaskBoardService) AssignTask(ctx context.Context, teamName, taskID, agent string) (*TaskBoard, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "assign_task", map[string]any{
-		"team_name": teamName,
-		"task_id":   taskID,
-		"agent":     agent,
-	})
+	_ = ctx
+	board, err := s.CreateBoard(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var board TaskBoard
-	if err := json.Unmarshal(result, &board); err != nil {
+	board.Assignments[taskID] = agent
+	board.Constraints["updatedAt"] = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "task_board.json", board); err != nil {
 		return nil, err
 	}
-	return &board, nil
+	return board, nil
 }
 
 func (s *TaskBoardService) GetTaskLocation(ctx context.Context, teamName, taskID string) (string, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "get_task_location", map[string]any{
-		"team_name": teamName,
-		"task_id":   taskID,
-	})
+	_ = ctx
+	board, err := s.CreateBoard(context.Background(), teamName)
 	if err != nil {
 		return "", err
 	}
-
-	// Result might be nil if not found
-	if string(result) == "null" {
-		return "", nil
+	for column, tasks := range board.Columns {
+		for _, task := range tasks {
+			if task == taskID {
+				return column, nil
+			}
+		}
 	}
-
-	var location string
-	if err := json.Unmarshal(result, &location); err != nil {
-		return "", err
-	}
-	return location, nil
+	return "", nil
 }
 
 func (s *TaskBoardService) GetBoardSummary(ctx context.Context, teamName string) (map[string]int, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.task_board", "get_board_summary", map[string]any{
-		"team_name": teamName,
-	})
+	_ = ctx
+	board, err := s.CreateBoard(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var summary map[string]int
-	if err := json.Unmarshal(result, &summary); err != nil {
-		return nil, err
+	summary := make(map[string]int, len(board.Columns))
+	for column, tasks := range board.Columns {
+		summary[column] = len(tasks)
 	}
 	return summary, nil
+}
+
+func appendUnique(existing []string, taskID string) []string {
+	for _, value := range existing {
+		if value == taskID {
+			return existing
+		}
+	}
+	return append(existing, taskID)
+}
+
+func removeTask(existing []string, taskID string) []string {
+	filtered := make([]string, 0, len(existing))
+	for _, value := range existing {
+		if value != taskID {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
 }

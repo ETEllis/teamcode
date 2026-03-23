@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/message"
 	"github.com/ETEllis/teamcode/internal/session"
 	"github.com/ETEllis/teamcode/internal/tui/styles"
 	"github.com/ETEllis/teamcode/internal/tui/theme"
 	"github.com/ETEllis/teamcode/internal/version"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type SendMsg struct {
@@ -98,9 +98,16 @@ func lspsConfigured(width int) string {
 }
 
 func logo(width int) string {
-	logo := fmt.Sprintf("%s %s", styles.OpenCodeIcon, "TeamCode")
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
+	art := []string{
+		fmt.Sprintf("%s TEAMCODE", styles.TeamCodeIcon),
+		"╔╦╗╔═╗╔═╗╔╦╗  ╔═╗╔═╗╔╦╗╔═╗",
+		" ║ ║╣ ╠═╣║║║  ║  ║ ║ ║║║╣ ",
+		" ╩ ╚═╝╩ ╩╩ ╩  ╚═╝╚═╝═╩╝╚═╝",
+		"team runtime + teammates + subagents",
+	}
+	logo := lipgloss.JoinVertical(lipgloss.Left, art...)
 
 	versionText := baseStyle.
 		Foreground(t.TextMuted()).
@@ -110,10 +117,9 @@ func logo(width int) string {
 		Bold(true).
 		Width(width).
 		Render(
-			lipgloss.JoinHorizontal(
+			lipgloss.JoinVertical(
 				lipgloss.Left,
 				logo,
-				" ",
 				versionText,
 			),
 		)

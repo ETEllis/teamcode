@@ -23,7 +23,13 @@ func Connect() (*sql.DB, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
-	dbPath := filepath.Join(dataDir, "opencode.db")
+	dbPath := filepath.Join(dataDir, "teamcode.db")
+	legacyPath := filepath.Join(dataDir, "opencode.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if _, legacyErr := os.Stat(legacyPath); legacyErr == nil {
+			dbPath = legacyPath
+		}
+	}
 	// Open the SQLite database
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {

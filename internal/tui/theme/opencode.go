@@ -4,15 +4,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// OpenCodeTheme implements the Theme interface with OpenCode brand colors.
+// TeamCodeTheme implements the Theme interface with TeamCode brand colors.
 // It provides both dark and light variants.
-type OpenCodeTheme struct {
+type TeamCodeTheme struct {
 	BaseTheme
 }
 
-// NewOpenCodeTheme creates a new instance of the OpenCode theme.
-func NewOpenCodeTheme() *OpenCodeTheme {
-	// OpenCode color palette
+// NewTeamCodeTheme creates a new instance of the TeamCode theme.
+func NewTeamCodeTheme() *TeamCodeTheme {
+	// TeamCode color palette
 	// Dark mode colors
 	darkBackground := "#212121"
 	darkCurrentLine := "#252525"
@@ -45,7 +45,7 @@ func NewOpenCodeTheme() *OpenCodeTheme {
 	lightYellow := "#b0851f"    // Emphasized text
 	lightBorder := "#d3d3d3"    // Border color
 
-	theme := &OpenCodeTheme{}
+	theme := &TeamCodeTheme{}
 
 	// Base colors
 	theme.PrimaryColor = lipgloss.AdaptiveColor{
@@ -271,7 +271,7 @@ func NewOpenCodeTheme() *OpenCodeTheme {
 }
 
 func init() {
-	// Register the OpenCode theme with the theme manager
-	RegisterTheme("opencode", NewOpenCodeTheme())
+	// Register both names so existing config continues to work.
+	RegisterTheme("teamcode", NewTeamCodeTheme())
+	RegisterTheme("opencode", NewTeamCodeTheme())
 }
-

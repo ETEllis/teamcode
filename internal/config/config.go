@@ -99,9 +99,10 @@ type Config struct {
 
 // Application constants
 const (
-	defaultDataDirectory = ".opencode"
+	defaultDataDirectory = ".teamcode"
 	defaultLogLevel      = "info"
-	appName              = "opencode"
+	appName              = "teamcode"
+	legacyAppName        = "opencode"
 
 	MaxTokensFallbackDefault = 4096
 )
@@ -112,6 +113,10 @@ var defaultContextPaths = []string{
 	".cursor/rules/",
 	"CLAUDE.md",
 	"CLAUDE.local.md",
+	"teamcode.md",
+	"teamcode.local.md",
+	"TeamCode.md",
+	"TeamCode.local.md",
 	"opencode.md",
 	"opencode.local.md",
 	"OpenCode.md",
@@ -145,6 +150,11 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	if err := readConfig(viper.ReadInConfig()); err != nil {
 		return cfg, err
 	}
+	if viper.ConfigFileUsed() == "" {
+		if err := mergeLegacyGlobalConfig(); err != nil {
+			return cfg, err
+		}
+	}
 
 	// Load and merge local config
 	mergeLocalConfig(workingDir)
@@ -161,7 +171,7 @@ func Load(workingDir string, debug bool) (*Config, error) {
 	if cfg.Debug {
 		defaultLevel = slog.LevelDebug
 	}
-	if os.Getenv("OPENCODE_DEV_DEBUG") == "true" {
+	if os.Getenv("TEAMCODE_DEV_DEBUG") == "true" || os.Getenv("OPENCODE_DEV_DEBUG") == "true" {
 		loggingFile := fmt.Sprintf("%s/%s", cfg.Data.Directory, "debug.log")
 		messagesPath := fmt.Sprintf("%s/%s", cfg.Data.Directory, "messages")
 
@@ -223,6 +233,8 @@ func configureViper() {
 	viper.AddConfigPath("$HOME")
 	viper.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", appName))
 	viper.AddConfigPath(fmt.Sprintf("$HOME/.config/%s", appName))
+	viper.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", legacyAppName))
+	viper.AddConfigPath(fmt.Sprintf("$HOME/.config/%s", legacyAppName))
 	viper.SetEnvPrefix(strings.ToUpper(appName))
 	viper.AutomaticEnv()
 }
@@ -231,7 +243,7 @@ func configureViper() {
 func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
-	viper.SetDefault("tui.theme", "opencode")
+	viper.SetDefault("tui.theme", "teamcode")
 	viper.SetDefault("autoCompact", true)
 
 	// Set default shell from environment or fallback to /bin/bash
@@ -459,7 +471,37 @@ func mergeLocalConfig(workingDir string) {
 	// Merge local config if it exists
 	if err := local.ReadInConfig(); err == nil {
 		viper.MergeConfigMap(local.AllSettings())
+		return
 	}
+
+	legacy := viper.New()
+	legacy.SetConfigName(fmt.Sprintf(".%s", legacyAppName))
+	legacy.SetConfigType("json")
+	legacy.AddConfigPath(workingDir)
+	if err := legacy.ReadInConfig(); err == nil {
+		viper.MergeConfigMap(legacy.AllSettings())
+	}
+}
+
+func mergeLegacyGlobalConfig() error {
+	legacy := viper.New()
+	legacy.SetConfigName(fmt.Sprintf(".%s", legacyAppName))
+	legacy.SetConfigType("json")
+	legacy.AddConfigPath("$HOME")
+	legacy.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", legacyAppName))
+	legacy.AddConfigPath(fmt.Sprintf("$HOME/.config/%s", legacyAppName))
+
+	err := legacy.ReadInConfig()
+	if err == nil {
+		viper.MergeConfigMap(legacy.AllSettings())
+		return nil
+	}
+
+	var configFileNotFoundError viper.ConfigFileNotFoundError
+	if errors.As(err, &configFileNotFoundError) {
+		return nil
+	}
+	return fmt.Errorf("failed to read legacy config: %w", err)
 }
 
 // applyDefaultValues sets default values for configuration fields that need processing.

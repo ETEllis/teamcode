@@ -1,5 +1,5 @@
 version: 2
-project_name: opencode
+project_name: teamcode
 before:
   hooks:
 builds:
@@ -12,13 +12,13 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/opencode-ai/opencode/internal/version.Version={{.Version}}
+      - -s -w -X github.com/ETEllis/teamcode/internal/version.Version={{.Version}}
     main: ./main.go
 
 archives:
-  - format: tar.gz
+  - formats: ["tar.gz"]
     name_template: >-
-      opencode-
+      teamcode-
       {{- if eq .Os "darwin" }}mac-
       {{- else if eq .Os "windows" }}windows-
       {{- else if eq .Os "linux" }}linux-{{end}}
@@ -28,30 +28,34 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  name_template: "0.0.0-{{ .Timestamp }}"
+  version_template: "0.0.0-{{ .Timestamp }}"
 aurs:
-  - name: opencode-ai
-    homepage: "https://github.com/opencode-ai/opencode"
+  - name: teamcode-bin
+    homepage: "https://github.com/ETEllis/teamcode"
     description: "terminal based agent that can build anything"
     maintainers:
       - "kujtimiihoxha <kujtimii.h@gmail.com>"
     license: "MIT"
     private_key: "{{ .Env.AUR_KEY }}"
-    git_url: "ssh://aur@aur.archlinux.org/opencode-ai-bin.git"
+    git_url: "ssh://aur@aur.archlinux.org/teamcode-bin.git"
     provides:
-      - opencode
+      - teamcode
     conflicts:
-      - opencode
+      - teamcode
     package: |-
-      install -Dm755 ./opencode "${pkgdir}/usr/bin/opencode"
-brews:
+      install -Dm755 ./teamcode "${pkgdir}/usr/bin/teamcode"
+homebrew_casks:
   - repository:
-      owner: opencode-ai
+      owner: ETEllis
       name: homebrew-tap
+    binaries:
+      - teamcode
+    homepage: "https://github.com/ETEllis/teamcode"
+    description: "Terminal-based AI coding team assistant"
 nfpms:
   - maintainer: kujtimiihoxha
     description: terminal based agent that can build anything

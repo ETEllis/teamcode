@@ -2,7 +2,6 @@ package team
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 )
 
@@ -39,149 +38,152 @@ type WorkingAgreement struct {
 }
 
 type TeamContextService struct {
-	caller *PythonCaller
+	store *store
 }
 
-func NewTeamContextService() *TeamContextService {
-	return &TeamContextService{
-		caller: NewPythonCaller(),
-	}
+func NewTeamContextService(sharedStore *store) *TeamContextService {
+	return &TeamContextService{store: sharedStore}
 }
 
 func (s *TeamContextService) CreateContext(ctx context.Context, teamName, charter string, roles map[string]Role) (*TeamContext, error) {
-	rolesMap := make(map[string]any)
-	for k, v := range roles {
-		rolesMap[k] = v
-	}
+	_ = ctx
 
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "create_team_context", map[string]any{
-		"team_name": teamName,
-		"charter":   charter,
-		"roles":     rolesMap,
-	})
+	existing, err := s.ReadContext(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
+	if existing == nil {
+		existing = &TeamContext{
+			TeamName: teamName,
+			Roles:    make(map[string]Role),
+			Goals:    make([]Goal, 0),
+			WorkingAgreement: WorkingAgreement{
+				CommitMessageFormat: "type: subject",
+				MaxWIP:              3,
+				HandoffRequires:     []string{"summary", "artifacts"},
+				ReviewRequired:      true,
+			},
+			CreatedAt: time.Now().UnixMilli(),
+		}
+	}
+	if charter != "" {
+		existing.Charter = charter
+	}
+	if existing.Roles == nil {
+		existing.Roles = make(map[string]Role)
+	}
+	for name, role := range roles {
+		existing.Roles[name] = role
+	}
+	existing.UpdatedAt = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "team_context.json", existing); err != nil {
 		return nil, err
 	}
-	return &tc, nil
+	return existing, nil
 }
 
 func (s *TeamContextService) ReadContext(ctx context.Context, teamName string) (*TeamContext, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "read_team_context", map[string]any{
-		"team_name": teamName,
-	})
-	if err != nil {
+	_ = ctx
+	var tc TeamContext
+	if err := s.store.readJSON(teamName, "team_context.json", &tc); err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
-		return nil, err
+	if tc.TeamName == "" {
+		return nil, nil
 	}
 	return &tc, nil
 }
 
 func (s *TeamContextService) UpdateContext(ctx context.Context, teamName string, updates map[string]any) (*TeamContext, error) {
-	updates["team_name"] = teamName
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "update_team_context", updates)
+	_ = ctx
+	tc, err := s.ReadContext(context.Background(), teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
+	if tc == nil {
+		tc, err = s.CreateContext(context.Background(), teamName, "", nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if charter, ok := updates["charter"].(string); ok {
+		tc.Charter = charter
+	}
+	tc.UpdatedAt = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "team_context.json", tc); err != nil {
 		return nil, err
 	}
-	return &tc, nil
+	return tc, nil
 }
 
 func (s *TeamContextService) AddRole(ctx context.Context, teamName, roleName string, role Role) (*TeamContext, error) {
-	roleMap := map[string]any{
-		"name":        role.Name,
-		"responsible": role.Responsible,
-	}
-	if role.CurrentFocus != "" {
-		roleMap["current_focus"] = role.CurrentFocus
-	}
-	if role.Agent != "" {
-		roleMap["agent"] = role.Agent
-	}
-
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "add_role", map[string]any{
-		"team_name": teamName,
-		"role_name": roleName,
-		"role":      roleMap,
-	})
+	_ = ctx
+	tc, err := s.CreateContext(context.Background(), teamName, "", nil)
 	if err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
+	if tc.Roles == nil {
+		tc.Roles = make(map[string]Role)
+	}
+	if role.Name == "" {
+		role.Name = roleName
+	}
+	tc.Roles[roleName] = role
+	tc.UpdatedAt = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "team_context.json", tc); err != nil {
 		return nil, err
 	}
-	return &tc, nil
+	return tc, nil
 }
 
 func (s *TeamContextService) AssignAgentToRole(ctx context.Context, teamName, roleName, agentName string) (*TeamContext, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "assign_agent_to_role", map[string]any{
-		"team_name":  teamName,
-		"role_name":  roleName,
-		"agent_name": agentName,
-	})
+	_ = ctx
+	tc, err := s.CreateContext(context.Background(), teamName, "", nil)
 	if err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
+	role := tc.Roles[roleName]
+	role.Name = roleName
+	role.Agent = agentName
+	tc.Roles[roleName] = role
+	tc.UpdatedAt = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "team_context.json", tc); err != nil {
 		return nil, err
 	}
-	return &tc, nil
+	return tc, nil
 }
 
 func (s *TeamContextService) AddGoal(ctx context.Context, teamName string, goal Goal) (*TeamContext, error) {
-	goalMap := map[string]any{
-		"id":          goal.ID,
-		"description": goal.Description,
-		"status":      goal.Status,
-	}
-	if goal.CreatedAt == 0 {
-		goalMap["created_at"] = int(time.Now().UnixMilli())
-	}
-
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "add_goal", map[string]any{
-		"team_name": teamName,
-		"goal":      goalMap,
-	})
+	_ = ctx
+	tc, err := s.CreateContext(context.Background(), teamName, "", nil)
 	if err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
+	if goal.CreatedAt == 0 {
+		goal.CreatedAt = time.Now().UnixMilli()
+	}
+	tc.Goals = append(tc.Goals, goal)
+	tc.UpdatedAt = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "team_context.json", tc); err != nil {
 		return nil, err
 	}
-	return &tc, nil
+	return tc, nil
 }
 
 func (s *TeamContextService) UpdateGoalStatus(ctx context.Context, teamName, goalID, status string) (*TeamContext, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.team_context", "update_goal_status", map[string]any{
-		"team_name": teamName,
-		"goal_id":   goalID,
-		"status":    status,
-	})
+	_ = ctx
+	tc, err := s.CreateContext(context.Background(), teamName, "", nil)
 	if err != nil {
 		return nil, err
 	}
-
-	var tc TeamContext
-	if err := json.Unmarshal(result, &tc); err != nil {
+	for i := range tc.Goals {
+		if tc.Goals[i].ID == goalID {
+			tc.Goals[i].Status = status
+		}
+	}
+	tc.UpdatedAt = time.Now().UnixMilli()
+	if err := s.store.writeJSON(teamName, "team_context.json", tc); err != nil {
 		return nil, err
 	}
-	return &tc, nil
+	return tc, nil
 }

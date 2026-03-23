@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/ETEllis/teamcode/internal/logging"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 var (
@@ -81,6 +81,7 @@ func SkipHidden(path string) bool {
 	}
 
 	commonIgnoredDirs := map[string]bool{
+		".teamcode":        true,
 		".opencode":        true,
 		"node_modules":     true,
 		"vendor":           true,

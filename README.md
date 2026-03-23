@@ -4,36 +4,35 @@
 
 ## Overview
 
-TeamCode is a fork of OpenCode that adds first-class support for multi-agent team collaboration. It enables:
+TeamCode is a fork of OpenCode focused on first-class multi-agent collaboration. It keeps the terminal-native workflow, model selection, and coding tools from OpenCode, while adding persistent team coordination and formal subagent execution. It enables:
 
 - **Team Context**: Shared charter, roles, goals, and working agreements
-- **Task Board**: Kanban-style task tracking with WIP limits
+- **Task Board**: Shared backlog, in-progress, blocked, and done state
 - **Handoff Protocol**: Explicit task transitions between agents
-- **Decision Log**: Searchable record of architectural decisions
-- **Escalation Queue**: Structured blocked task resolution
-- **Shared Artifacts**: Team docs, specs, and diagrams
-- **Retrospectives**: Sprint retrospectives for continuous improvement
 - **Private Inboxes**: Each agent has their own message inbox
+- **Direct Chatter**: Teammates can message specific peers
+- **Global Broadcasts**: Team-wide updates and coordination signals
+- **Persistent Teammates**: Named worker sessions with role identity
+- **Subagents**: Bounded worker sessions for focused delegated execution
+- **Nested Delegation**: Teammates can spawn their own subagents
 
 ## Architecture
 
 ```
 TeamCode (Go)
     │
-    └── internal/team/        # Go team package
-            │
-            └── pywrapper.go  # Python bridge
-                    │
-                    └── claude_teams  # Python library
-                            │
-                            └── ~/.claude/teams/<team>/
-                                    ├── team-context.json
-                                    ├── task-board.json
-                                    ├── handoffs/
-                                    ├── inboxes/      # Private per agent
-                                    ├── decisions/
-                                    └── ...
+    ├── internal/team/             # Shared team state and messaging
+    │       ├── team_context.json
+    │       ├── task_board.json
+    │       ├── handoffs.json
+    │       ├── members.json
+    │       └── inboxes/<agent>.json
+    │
+    └── internal/orchestration/    # Persistent teammate/subagent runtime
+            └── worker manager + child sessions
 ```
+
+Team state is now native Go and file-backed under `.teamcode/teams` or the configured TeamCode data directory. The old Python bridge is no longer part of the runtime.
 
 ## Building
 
@@ -54,9 +53,9 @@ go build -o teamcode .
 ./teamcode -d
 ```
 
-## Team Tools
+## Collaboration Tools
 
-When operating in team mode, the following tools become available:
+The main coder agent now has first-class collaboration tools:
 
 - `team_create_context` - Create team with charter and roles
 - `team_add_role` - Add role definitions
@@ -66,6 +65,15 @@ When operating in team mode, the following tools become available:
 - `handoff_create` - Create task handoffs
 - `handoff_accept` - Accept pending handoffs
 - `inbox_read` - Read your messages
+- `team_message_send` - Send a direct teammate message
+- `team_broadcast` - Send a team-wide broadcast
+- `team_status` - Inspect team, task, member, handoff, and worker state
+- `teammate_spawn` / `teammate_wait` - Launch and monitor persistent teammates
+- `subagent_spawn` / `subagent_wait` - Launch and monitor bounded subagents
+
+## Compatibility
+
+TeamCode prefers `.teamcode`, `TeamCode.md`, `teamcode.db`, and `teamcode` theme names, but still reads legacy OpenCode config and memory files so existing installs can migrate without breaking.
 
 ## License
 

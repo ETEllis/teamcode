@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/diff"
 	"github.com/ETEllis/teamcode/internal/llm/agent"
@@ -18,6 +16,8 @@ import (
 	"github.com/ETEllis/teamcode/internal/message"
 	"github.com/ETEllis/teamcode/internal/tui/styles"
 	"github.com/ETEllis/teamcode/internal/tui/theme"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type uiMessageType int
@@ -240,6 +240,36 @@ func toolName(name string) string {
 		return "Write"
 	case tools.PatchToolName:
 		return "Patch"
+	case tools.TeamCreateContextToolName:
+		return "Team"
+	case tools.TeamAddRoleToolName:
+		return "Role"
+	case tools.TeamAssignRoleToolName:
+		return "Assign"
+	case tools.TaskCreateToolName:
+		return "Task"
+	case tools.TaskMoveToolName:
+		return "Move"
+	case tools.HandoffCreateToolName:
+		return "Handoff"
+	case tools.HandoffAcceptToolName:
+		return "Accept"
+	case tools.InboxReadToolName:
+		return "Inbox"
+	case tools.TeamMessageSendToolName:
+		return "Message"
+	case tools.TeamBroadcastToolName:
+		return "Broadcast"
+	case tools.TeamStatusToolName:
+		return "Status"
+	case tools.TeammateSpawnToolName:
+		return "Teammate"
+	case tools.TeammateWaitToolName:
+		return "Teammate"
+	case tools.SubagentSpawnToolName:
+		return "Subagent"
+	case tools.SubagentWaitToolName:
+		return "Subagent"
 	}
 	return name
 }
@@ -268,6 +298,36 @@ func getToolAction(name string) string {
 		return "Preparing write..."
 	case tools.PatchToolName:
 		return "Preparing patch..."
+	case tools.TeamCreateContextToolName:
+		return "Creating team..."
+	case tools.TeamAddRoleToolName:
+		return "Adding role..."
+	case tools.TeamAssignRoleToolName:
+		return "Assigning teammate..."
+	case tools.TaskCreateToolName:
+		return "Creating task..."
+	case tools.TaskMoveToolName:
+		return "Moving task..."
+	case tools.HandoffCreateToolName:
+		return "Creating handoff..."
+	case tools.HandoffAcceptToolName:
+		return "Accepting handoff..."
+	case tools.InboxReadToolName:
+		return "Reading inbox..."
+	case tools.TeamMessageSendToolName:
+		return "Sending message..."
+	case tools.TeamBroadcastToolName:
+		return "Broadcasting..."
+	case tools.TeamStatusToolName:
+		return "Reading team status..."
+	case tools.TeammateSpawnToolName:
+		return "Spawning teammate..."
+	case tools.TeammateWaitToolName:
+		return "Waiting on teammate..."
+	case tools.SubagentSpawnToolName:
+		return "Spawning subagent..."
+	case tools.SubagentWaitToolName:
+		return "Waiting on subagent..."
 	}
 	return "Working..."
 }

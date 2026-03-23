@@ -17,6 +17,7 @@ import (
 	"github.com/ETEllis/teamcode/internal/logging"
 	"github.com/ETEllis/teamcode/internal/lsp"
 	"github.com/ETEllis/teamcode/internal/message"
+	"github.com/ETEllis/teamcode/internal/orchestration"
 	"github.com/ETEllis/teamcode/internal/permission"
 	"github.com/ETEllis/teamcode/internal/session"
 	"github.com/ETEllis/teamcode/internal/team"
@@ -29,6 +30,7 @@ type App struct {
 	History     history.Service
 	Permissions permission.Service
 	Team        *team.Service
+	Workers     *orchestration.Manager
 
 	CoderAgent agent.Service
 
@@ -53,6 +55,7 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		History:     files,
 		Permissions: permission.NewPermissionService(),
 		Team:        team.NewService(),
+		Workers:     orchestration.NewManager(sessions),
 		LSPClients:  make(map[string]*lsp.Client),
 	}
 
@@ -75,6 +78,8 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 			app.Messages,
 			app.History,
 			app.LSPClients,
+			app.Team,
+			app.Workers,
 		),
 	)
 	if err != nil {
@@ -82,6 +87,45 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		// Don't return error - allow the app to start so TUI can show setup wizard
 		// The coder agent will be nil, and the TUI should handle this case
 	}
+
+	app.Workers.SetRunner(func(ctx context.Context, sessionID string, request orchestration.RunRequest) (<-chan orchestration.RunResult, error) {
+		agentName := config.AgentCoder
+		toolset := agent.CoderAgentTools(
+			app.Permissions,
+			app.Sessions,
+			app.Messages,
+			app.History,
+			app.LSPClients,
+			app.Team,
+			app.Workers,
+		)
+		if request.Profile == "task" {
+			agentName = config.AgentTask
+			toolset = agent.TaskAgentTools(app.LSPClients)
+		}
+
+		childAgent, err := agent.NewAgent(agentName, app.Sessions, app.Messages, toolset)
+		if err != nil {
+			return nil, err
+		}
+		done, err := childAgent.Run(ctx, sessionID, request.Prompt)
+		if err != nil {
+			return nil, err
+		}
+
+		out := make(chan orchestration.RunResult, 1)
+		go func() {
+			defer close(out)
+			result := <-done
+			runResult := orchestration.RunResult{}
+			if result.Error != nil {
+				runResult.Error = result.Error
+			}
+			runResult.Content = result.Message.Content().String()
+			out <- runResult
+		}()
+		return out, nil
+	})
 
 	return app, nil
 }

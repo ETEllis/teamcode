@@ -2,7 +2,9 @@ package team
 
 import (
 	"context"
-	"encoding/json"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type Handoff struct {
@@ -21,129 +23,122 @@ type Handoff struct {
 }
 
 type HandoffService struct {
-	caller *PythonCaller
+	store *store
 }
 
-func NewHandoffService() *HandoffService {
-	return &HandoffService{
-		caller: NewPythonCaller(),
-	}
+func NewHandoffService(sharedStore *store) *HandoffService {
+	return &HandoffService{store: sharedStore}
 }
 
 func (s *HandoffService) Create(ctx context.Context, teamName, taskID, fromAgent, toAgent, workSummary string, artifacts, criteria []string) (*Handoff, error) {
-	kwargs := map[string]any{
-		"team_name":  teamName,
-		"task_id":    taskID,
-		"from_agent": fromAgent,
-		"to_agent":   toAgent,
-	}
-	if workSummary != "" {
-		kwargs["work_summary"] = workSummary
-	}
-	if len(artifacts) > 0 {
-		kwargs["artifacts"] = artifacts
-	}
-	if len(criteria) > 0 {
-		kwargs["acceptance_criteria"] = criteria
-	}
-
-	result, err := s.caller.Call(ctx, "claude_teams.handoff", "create_handoff", kwargs)
+	_ = ctx
+	handoffs, err := s.load(teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var h Handoff
-	if err := json.Unmarshal(result, &h); err != nil {
+	now := time.Now().UnixMilli()
+	h := Handoff{
+		ID:                 uuid.NewString(),
+		TaskID:             taskID,
+		FromAgent:          fromAgent,
+		ToAgent:            toAgent,
+		Status:             "pending",
+		WorkSummary:        workSummary,
+		Artifacts:          artifacts,
+		AcceptanceCriteria: criteria,
+		CreatedAt:          now,
+	}
+	handoffs = append(handoffs, h)
+	if err := s.store.writeJSON(teamName, "handoffs.json", handoffs); err != nil {
 		return nil, err
 	}
 	return &h, nil
 }
 
 func (s *HandoffService) Read(ctx context.Context, teamName, handoffID string) (*Handoff, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.handoff", "read_handoff", map[string]any{
-		"team_name":  teamName,
-		"handoff_id": handoffID,
-	})
+	_ = ctx
+	handoffs, err := s.load(teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var h Handoff
-	if err := json.Unmarshal(result, &h); err != nil {
-		return nil, err
+	for _, handoff := range handoffs {
+		if handoff.ID == handoffID {
+			copy := handoff
+			return &copy, nil
+		}
 	}
-	return &h, nil
+	return nil, nil
 }
 
 func (s *HandoffService) Accept(ctx context.Context, teamName, handoffID, acceptedBy string) (*Handoff, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.handoff", "accept_handoff", map[string]any{
-		"team_name":   teamName,
-		"handoff_id":  handoffID,
-		"accepted_by": acceptedBy,
-	})
+	_ = ctx
+	handoffs, err := s.load(teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var h Handoff
-	if err := json.Unmarshal(result, &h); err != nil {
-		return nil, err
+	now := time.Now().UnixMilli()
+	for i := range handoffs {
+		if handoffs[i].ID == handoffID {
+			handoffs[i].Status = "accepted"
+			handoffs[i].AcceptedBy = acceptedBy
+			handoffs[i].AcceptedAt = &now
+			if err := s.store.writeJSON(teamName, "handoffs.json", handoffs); err != nil {
+				return nil, err
+			}
+			copy := handoffs[i]
+			return &copy, nil
+		}
 	}
-	return &h, nil
+	return nil, nil
 }
 
 func (s *HandoffService) Reject(ctx context.Context, teamName, handoffID, rejectedBy, reason string) (*Handoff, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.handoff", "reject_handoff", map[string]any{
-		"team_name":   teamName,
-		"handoff_id":  handoffID,
-		"rejected_by": rejectedBy,
-		"reason":      reason,
-	})
+	_ = ctx
+	handoffs, err := s.load(teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var h Handoff
-	if err := json.Unmarshal(result, &h); err != nil {
-		return nil, err
+	for i := range handoffs {
+		if handoffs[i].ID == handoffID {
+			handoffs[i].Status = "rejected"
+			handoffs[i].AcceptedBy = rejectedBy
+			handoffs[i].RejectionReason = reason
+			if err := s.store.writeJSON(teamName, "handoffs.json", handoffs); err != nil {
+				return nil, err
+			}
+			copy := handoffs[i]
+			return &copy, nil
+		}
 	}
-	return &h, nil
+	return nil, nil
 }
 
 func (s *HandoffService) List(ctx context.Context, teamName string, status, toAgent string) ([]Handoff, error) {
-	kwargs := map[string]any{
-		"team_name": teamName,
-	}
-	if status != "" {
-		kwargs["status"] = status
-	}
-	if toAgent != "" {
-		kwargs["to_agent"] = toAgent
-	}
-
-	result, err := s.caller.Call(ctx, "claude_teams.handoff", "list_handoffs", kwargs)
+	_ = ctx
+	handoffs, err := s.load(teamName)
 	if err != nil {
 		return nil, err
 	}
-
-	var handoffs []Handoff
-	if err := json.Unmarshal(result, &handoffs); err != nil {
-		return nil, err
+	filtered := make([]Handoff, 0, len(handoffs))
+	for _, handoff := range handoffs {
+		if status != "" && handoff.Status != status {
+			continue
+		}
+		if toAgent != "" && handoff.ToAgent != toAgent {
+			continue
+		}
+		filtered = append(filtered, handoff)
 	}
-	return handoffs, nil
+	return filtered, nil
 }
 
 func (s *HandoffService) GetPendingForAgent(ctx context.Context, teamName, agent string) ([]Handoff, error) {
-	result, err := s.caller.Call(ctx, "claude_teams.handoff", "get_pending_handoffs_for_agent", map[string]any{
-		"team_name": teamName,
-		"agent":     agent,
-	})
-	if err != nil {
-		return nil, err
-	}
+	return s.List(ctx, teamName, "pending", agent)
+}
 
+func (s *HandoffService) load(teamName string) ([]Handoff, error) {
 	var handoffs []Handoff
-	if err := json.Unmarshal(result, &handoffs); err != nil {
+	if err := s.store.readJSON(teamName, "handoffs.json", &handoffs); err != nil {
 		return nil, err
 	}
 	return handoffs, nil
