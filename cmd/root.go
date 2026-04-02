@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/ETEllis/teamcode/internal/app"
-	"github.com/ETEllis/teamcode/internal/config"
-	"github.com/ETEllis/teamcode/internal/db"
 	"github.com/ETEllis/teamcode/internal/format"
 	"github.com/ETEllis/teamcode/internal/llm/agent"
 	"github.com/ETEllis/teamcode/internal/logging"
@@ -23,10 +21,10 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "teamcode",
-	Short: "Terminal-based AI assistant for software development",
-	Long: `TeamCode is a powerful terminal-based AI assistant that helps with software development tasks.
-It provides an interactive chat interface with AI capabilities, code analysis, and LSP integration
-to assist developers in writing, debugging, and understanding code directly from the terminal.`,
+	Short: "Terminal-native coding assistant with The Agency runtime built in",
+	Long: `TeamCode preserves the fast OpenCode-derived solo coding flow while also exposing The Agency:
+a shared organizational runtime with constitutions, office lifecycle commands, and persistent
+multi-role operating state when you want more than a single assistant.`,
 	Example: `
   # Run in interactive mode
   teamcode
@@ -58,8 +56,6 @@ to assist developers in writing, debugging, and understanding code directly from
 		}
 
 		// Load the config
-		debug, _ := cmd.Flags().GetBool("debug")
-		cwd, _ := cmd.Flags().GetString("cwd")
 		prompt, _ := cmd.Flags().GetString("prompt")
 		outputFormat, _ := cmd.Flags().GetString("output-format")
 		quiet, _ := cmd.Flags().GetBool("quiet")
@@ -69,64 +65,31 @@ to assist developers in writing, debugging, and understanding code directly from
 			return fmt.Errorf("invalid format option: %s\n%s", outputFormat, format.GetHelpText())
 		}
 
-		if cwd != "" {
-			err := os.Chdir(cwd)
-			if err != nil {
-				return fmt.Errorf("failed to change directory: %v", err)
-			}
-		}
-		if cwd == "" {
-			c, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current working directory: %v", err)
-			}
-			cwd = c
-		}
-		_, err := config.Load(cwd, debug)
+		runtime, err := bootstrapRuntime(cmd)
 		if err != nil {
 			return err
 		}
-
-		// Connect DB, this will also run migrations
-		conn, err := db.Connect()
-		if err != nil {
-			return err
-		}
-
-		// Create main context for the application
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		app, err := app.New(ctx, conn)
-		if err != nil {
-			logging.Error("Failed to create app: %v", err)
-			return err
-		}
-		// Defer shutdown here so it runs for both interactive and non-interactive modes
-		defer app.Shutdown()
-
-		// Initialize MCP tools early for both modes
-		initMCPTools(ctx, app)
+		defer runtime.Close()
 
 		// Non-interactive mode
 		if prompt != "" {
 			// Run non-interactive flow using the App method
-			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet)
+			return runtime.app.RunNonInteractive(runtime.ctx, prompt, outputFormat, quiet)
 		}
 
 		// Interactive mode
 		// Set up the TUI
 		zone.NewGlobal()
 		program := tea.NewProgram(
-			tui.New(app),
+			tui.New(runtime.app),
 			tea.WithAltScreen(),
 		)
 
 		// Setup the subscriptions, this will send services events to the TUI
-		ch, cancelSubs := setupSubscriptions(app, ctx)
+		ch, cancelSubs := setupSubscriptions(runtime.app, runtime.ctx)
 
 		// Create a context for the TUI message handler
-		tuiCtx, tuiCancel := context.WithCancel(ctx)
+		tuiCtx, tuiCancel := context.WithCancel(runtime.ctx)
 		var tuiWg sync.WaitGroup
 		tuiWg.Add(1)
 
@@ -154,9 +117,6 @@ to assist developers in writing, debugging, and understanding code directly from
 
 		// Cleanup function for when the program exits
 		cleanup := func() {
-			// Shutdown the app
-			app.Shutdown()
-
 			// Cancel subscriptions first
 			cancelSubs()
 
@@ -165,6 +125,8 @@ to assist developers in writing, debugging, and understanding code directly from
 
 			// Wait for TUI message handler to finish
 			tuiWg.Wait()
+
+			runtime.Close()
 
 			logging.Info("All goroutines cleaned up")
 		}
@@ -293,8 +255,8 @@ func Execute() {
 func init() {
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("version", "v", false, "Version")
-	rootCmd.Flags().BoolP("debug", "d", false, "Debug")
-	rootCmd.Flags().StringP("cwd", "c", "", "Current working directory")
+	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
+	rootCmd.PersistentFlags().StringP("cwd", "c", "", "Current working directory")
 	rootCmd.Flags().StringP("prompt", "p", "", "Prompt to run in non-interactive mode")
 
 	// Add format flag with validation logic
@@ -308,4 +270,6 @@ func init() {
 	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return format.SupportedFormats, cobra.ShellCompDirectiveNoFileComp
 	})
+
+	rootCmd.AddCommand(newAgencyCmd(), newOfficeCmd())
 }

@@ -6,21 +6,29 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/diff"
 	"github.com/ETEllis/teamcode/internal/history"
+	"github.com/ETEllis/teamcode/internal/llm/models"
 	"github.com/ETEllis/teamcode/internal/pubsub"
 	"github.com/ETEllis/teamcode/internal/session"
 	"github.com/ETEllis/teamcode/internal/tui/styles"
 	"github.com/ETEllis/teamcode/internal/tui/theme"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ETEllis/teamcode/internal/orchestration"
+	"github.com/ETEllis/teamcode/internal/team"
 )
 
 type sidebarCmp struct {
 	width, height int
 	session       session.Session
 	history       history.Service
+	agency        *app.AgencyService
+	team          *team.Service
+	workers       *orchestration.Manager
 	modFiles      map[string]struct {
 		additions int
 		removals  int
@@ -96,6 +104,10 @@ func (m *sidebarCmp) View() string {
 				" ",
 				m.sessionSection(),
 				" ",
+				m.providerSection(),
+				" ",
+				m.agencySection(),
+				" ",
 				lspsConfigured(m.width),
 				" ",
 				m.modifiedFiles(),
@@ -122,6 +134,167 @@ func (m *sidebarCmp) sessionSection() string {
 		sessionKey,
 		sessionValue,
 	)
+}
+
+func (m *sidebarCmp) providerSection() string {
+	cfg := config.Get()
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	title := baseStyle.
+		Width(m.width).
+		Foreground(t.Primary()).
+		Bold(true).
+		Render("Models")
+
+	if cfg == nil {
+		return lipgloss.JoinVertical(lipgloss.Left, title)
+	}
+
+	current := "Unavailable"
+	if agentCfg, ok := cfg.Agents[config.AgentCoder]; ok {
+		if model, ok := models.SupportedModels[agentCfg.Model]; ok {
+			current = fmt.Sprintf("%s (%s)", model.Name, model.Provider)
+		}
+	}
+
+	enabledProviders := make([]string, 0)
+	for provider, providerCfg := range cfg.Providers {
+		if providerCfg.Disabled {
+			continue
+		}
+		enabledProviders = append(enabledProviders, string(provider))
+	}
+	sort.Strings(enabledProviders)
+
+	lines := []string{
+		baseStyle.Width(m.width).Render("Current: " + current),
+	}
+	if len(enabledProviders) == 0 {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Enabled: none configured"))
+	} else {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Enabled: "+strings.Join(enabledProviders, ", ")))
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, append([]string{title}, lines...)...)
+}
+
+func (m *sidebarCmp) agencySection() string {
+	cfg := config.Get()
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	title := baseStyle.
+		Width(m.width).
+		Foreground(t.Primary()).
+		Bold(true).
+		Render("Agency")
+
+	if cfg == nil || !config.TeamHUDEnabled(cfg) || m.team == nil {
+		return lipgloss.JoinVertical(lipgloss.Left, title)
+	}
+
+	overview := InspectAgencyOverview(nil)
+	if m.team != nil {
+		overview = InspectAgencyOverview(&app.App{
+			Agency:  m.agency,
+			Team:    m.team,
+			Workers: m.workers,
+		})
+	}
+
+	if !overview.HasOfficeState && !overview.HasTeamSnapshot {
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			title,
+			baseStyle.Width(m.width).Render(fmt.Sprintf("Constitution: %s", emptyFallback(overview.SoloConstitution, "solo"))),
+			baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Office: stopped"),
+		)
+	}
+
+	lines := []string{
+		baseStyle.Width(m.width).Render(fmt.Sprintf("Constitution: %s", emptyFallback(overview.CurrentConstitution, overview.SoloConstitution))),
+	}
+	if overview.OfficeMode != "" {
+		state := "stopped"
+		if overview.Running {
+			state = "running"
+		}
+		lines = append(lines, baseStyle.Width(m.width).Render(fmt.Sprintf("Office: %s (%s)", state, overview.OfficeMode)))
+	}
+	if overview.TeamName != "" {
+		lines = append(lines, baseStyle.Width(m.width).Render(fmt.Sprintf("Office name: %s", overview.TeamName)))
+	}
+	if overview.Governance != "" {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Governance: "+overview.Governance))
+	}
+	if overview.Topology != "" && overview.Topology != overview.Governance {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Topology: "+overview.Topology))
+	}
+	if overview.ConsensusMode != "" {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Consensus: "+overview.ConsensusMode))
+	}
+	if overview.Blueprint != "" {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Blueprint: "+overview.Blueprint))
+	} else if overview.TeamTemplate != "" {
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("Template: "+overview.TeamTemplate))
+	}
+	if overview.HasTeamSnapshot {
+		lines = append(lines,
+			baseStyle.Width(m.width).Render(fmt.Sprintf("Lead: %s", emptyFallback(overview.Leader, "unassigned"))),
+			baseStyle.Width(m.width).Render(fmt.Sprintf("Roster: %d  Workers: %d  Active: %d", overview.MemberCount, overview.WorkerCount, overview.ActiveWorkerCount)),
+			baseStyle.Width(m.width).Render(fmt.Sprintf("Signals: %d direct / %d broadcast / %d handoff", overview.UnreadDirect, overview.UnreadBroadcasts, overview.PendingHandoffs)),
+			baseStyle.Width(m.width).Render(fmt.Sprintf("Board: ready %d  active %d  review %d  done %d",
+				overview.BoardSummary["ready"],
+				overview.BoardSummary["in_progress"],
+				overview.BoardSummary["in_review"],
+				overview.BoardSummary["done"],
+			)),
+		)
+	} else if overview.ManufacturedRoles > 0 {
+		lines = append(lines,
+			baseStyle.Width(m.width).Render(fmt.Sprintf("Manufactured roles: %d", overview.ManufacturedRoles)),
+		)
+		if overview.GenesisSummary != "" {
+			lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render(truncateSidebarLine(m.width, overview.GenesisSummary)))
+		}
+	}
+
+	if len(overview.Thread) > 0 {
+		threadTitle := baseStyle.
+			Width(m.width).
+			Foreground(t.TextMuted()).
+			Bold(true).
+			Render("Thread" + threadTitleSuffix(overview.ThreadSource))
+		lines = append(lines, threadTitle)
+		for _, line := range overview.Thread {
+			lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(m.width).Render("• "+truncateSidebarLine(m.width-2, line)))
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, append([]string{title}, lines...)...)
+}
+
+func truncateSidebarLine(width int, value string) string {
+	if width <= 0 {
+		return value
+	}
+	maxWidth := max(16, width-1)
+	if lipgloss.Width(value) <= maxWidth {
+		return value
+	}
+	return value[:maxWidth-3] + "..."
+}
+
+func threadTitleSuffix(source string) string {
+	switch source {
+	case "runtime":
+		return " (live)"
+	case "genesis":
+		return " (planned)"
+	default:
+		return ""
+	}
 }
 
 func (m *sidebarCmp) modifiedFile(filePath string, additions, removals int) string {
@@ -235,10 +408,13 @@ func (m *sidebarCmp) GetSize() (int, int) {
 	return m.width, m.height
 }
 
-func NewSidebarCmp(session session.Session, history history.Service) tea.Model {
+func NewSidebarCmp(session session.Session, history history.Service, agencyService *app.AgencyService, teamService *team.Service, workers *orchestration.Manager) tea.Model {
 	return &sidebarCmp{
 		session: session,
 		history: history,
+		agency:  agencyService,
+		team:    teamService,
+		workers: workers,
 	}
 }
 

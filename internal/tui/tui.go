@@ -102,12 +102,16 @@ type appModel struct {
 	status          core.StatusCmp
 	app             *app.App
 	selectedSession session.Session
+	splashMode      bool
 
 	showPermissions bool
 	permissions     dialog.PermissionDialogCmp
 
 	showHelp bool
 	help     dialog.HelpCmp
+
+	showAgencyDialog bool
+	agencyDialog     dialog.AgencyDialog
 
 	showQuit bool
 	quit     dialog.QuitDialog
@@ -149,6 +153,8 @@ func (a appModel) Init() tea.Cmd {
 	cmds = append(cmds, cmd)
 	cmd = a.help.Init()
 	cmds = append(cmds, cmd)
+	cmd = a.agencyDialog.Init()
+	cmds = append(cmds, cmd)
 	cmd = a.sessionDialog.Init()
 	cmds = append(cmds, cmd)
 	cmd = a.commandDialog.Init()
@@ -177,17 +183,25 @@ func (a appModel) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+func (a appModel) contentHeight() int {
+	if a.splashMode {
+		return a.height
+	}
+	return max(0, a.height-1)
+}
+
 func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		msg.Height -= 1 // Make space for the status bar
 		a.width, a.height = msg.Width, msg.Height
 
 		s, _ := a.status.Update(msg)
 		a.status = s.(core.StatusCmp)
-		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
+		pageMsg := msg
+		pageMsg.Height = a.contentHeight()
+		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(pageMsg)
 		cmds = append(cmds, cmd)
 
 		prm, permCmd := a.permissions.Update(msg)
@@ -197,6 +211,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		help, helpCmd := a.help.Update(msg)
 		a.help = help.(dialog.HelpCmp)
 		cmds = append(cmds, helpCmd)
+
+		agencyDialog, agencyCmd := a.agencyDialog.Update(msg)
+		a.agencyDialog = agencyDialog.(dialog.AgencyDialog)
+		cmds = append(cmds, agencyCmd)
 
 		session, sessionCmd := a.sessionDialog.Update(msg)
 		a.sessionDialog = session.(dialog.SessionDialog)
@@ -293,13 +311,105 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showQuit = false
 		return a, nil
 
+	case dialog.ShowQuitDialogMsg:
+		a.showQuit = true
+		a.showHelp = false
+		a.showSessionDialog = false
+		a.showCommandDialog = false
+		a.showModelDialog = false
+		a.showThemeDialog = false
+		return a, nil
+
 	case dialog.CloseSessionDialogMsg:
 		a.showSessionDialog = false
+		return a, nil
+
+	case dialog.ShowSessionDialogMsg:
+		if a.currentPage != page.ChatPage || a.showQuit || a.showPermissions || a.showCommandDialog {
+			return a, nil
+		}
+		sessions, err := a.app.Sessions.List(context.Background())
+		if err != nil {
+			return a, util.ReportError(err)
+		}
+		if len(sessions) == 0 {
+			return a, util.ReportWarn("No sessions available")
+		}
+		a.sessionDialog.SetSessions(sessions)
+		a.showSessionDialog = true
 		return a, nil
 
 	case dialog.CloseCommandDialogMsg:
 		a.showCommandDialog = false
 		return a, nil
+
+	case dialog.CloseAgencyDialogMsg:
+		a.showAgencyDialog = false
+		return a, nil
+
+	case dialog.ShowHelpDialogMsg:
+		if !a.showQuit {
+			a.showHelp = true
+		}
+		return a, nil
+
+	case dialog.ShowAgencyDialogMsg:
+		if a.currentPage != page.ChatPage || a.showQuit || a.showPermissions || a.showSessionDialog || a.showCommandDialog || a.showThemeDialog || a.showFilepicker {
+			return a, nil
+		}
+		a.showHelp = false
+		a.agencyDialog.SetData(a.agencyDialogData())
+		a.showAgencyDialog = true
+		return a, nil
+
+	case dialog.BootAgencyOfficeMsg:
+		if a.app.Agency == nil {
+			return a, util.ReportWarn("Agency service is not configured")
+		}
+		status, err := a.app.Agency.BootOffice(context.Background(), strings.TrimSpace(msg.Constitution))
+		if err != nil {
+			return a, util.ReportError(err)
+		}
+		a.showHelp = false
+		a.agencyDialog.SetData(a.agencyDialogData())
+		a.showAgencyDialog = true
+		return a, util.ReportInfo(fmt.Sprintf("Agency office running under %s", emptyString(status.Constitution, "current constitution")))
+
+	case dialog.StopAgencyOfficeMsg:
+		if a.app.Agency == nil {
+			return a, util.ReportWarn("Agency service is not configured")
+		}
+		status, err := a.app.Agency.StopOffice()
+		if err != nil {
+			return a, util.ReportError(err)
+		}
+		a.showHelp = false
+		a.agencyDialog.SetData(a.agencyDialogData())
+		a.showAgencyDialog = true
+		if status.Constitution != "" {
+			return a, util.ReportInfo(fmt.Sprintf("Agency office stopped (%s)", status.Constitution))
+		}
+		return a, util.ReportInfo("Agency office stopped")
+
+	case dialog.StartAgencyGenesisMsg:
+		if a.app.Agency == nil {
+			return a, util.ReportWarn("Agency service is not configured")
+		}
+		intent := strings.TrimSpace(msg.Intent)
+		if intent == "" {
+			return a, util.ReportWarn("Usage: /agency genesis <intent>")
+		}
+		result, err := a.app.Agency.StartGenesis(app.AgencyGenesisRequest{
+			Intent:       intent,
+			Constitution: strings.TrimSpace(msg.Constitution),
+		})
+		if err != nil {
+			return a, util.ReportError(err)
+		}
+		a.showHelp = false
+		a.agencyDialog.SetData(a.agencyDialogData())
+		a.showAgencyDialog = true
+		return a, util.ReportInfo(fmt.Sprintf("Recorded Agency genesis for %s", result.ConstitutionName))
 
 	case dialog.ShowCommandDialogMsg:
 		if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showThemeDialog && !a.showFilepicker {
@@ -357,6 +467,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showThemeDialog = false
 		return a, nil
 
+	case dialog.ShowThemeDialogMsg:
+		if !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			a.showThemeDialog = true
+			return a, a.themeDialog.Init()
+		}
+		return a, nil
+
 	case dialog.ThemeChangedMsg:
 		a.pages[a.currentPage], cmd = a.pages[a.currentPage].Update(msg)
 		a.showThemeDialog = false
@@ -364,6 +481,12 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dialog.CloseModelDialogMsg:
 		a.showModelDialog = false
+		return a, nil
+
+	case dialog.ShowModelDialogMsg:
+		if a.currentPage == page.ChatPage && !a.showQuit && !a.showPermissions && !a.showSessionDialog && !a.showCommandDialog {
+			a.showModelDialog = true
+		}
 		return a, nil
 
 	case dialog.ModelSelectedMsg:
@@ -409,6 +532,16 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
 
+	case chat.SplashModeChangedMsg:
+		if a.splashMode == msg.Active {
+			return a, nil
+		}
+		a.splashMode = msg.Active
+		if sizable, ok := a.pages[a.currentPage].(layout.Sizeable); ok {
+			return a, sizable.SetSize(a.width, a.contentHeight())
+		}
+		return a, nil
+
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == a.selectedSession.ID {
 			a.selectedSession = msg.Payload
@@ -440,6 +573,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// If submitted, replace all named arguments and run the command
 		if msg.Submit {
+			switch msg.CommandID {
+			case "agency-genesis":
+				return a, util.CmdHandler(dialog.StartAgencyGenesisMsg{
+					Intent:       msg.Args["INTENT"],
+					Constitution: msg.Args["CONSTITUTION"],
+				})
+			}
+
 			content := msg.Content
 
 			// Replace each named argument with its value
@@ -640,6 +781,15 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if a.showAgencyDialog {
+		d, agencyCmd := a.agencyDialog.Update(msg)
+		a.agencyDialog = d.(dialog.AgencyDialog)
+		cmds = append(cmds, agencyCmd)
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
 	if a.showModelDialog {
 		d, modelCmd := a.modelDialog.Update(msg)
 		a.modelDialog = d.(dialog.ModelDialog)
@@ -691,6 +841,49 @@ func (a *appModel) findCommand(id string) (dialog.Command, bool) {
 	return dialog.Command{}, false
 }
 
+func (a *appModel) agencyDialogData() dialog.AgencyDialogData {
+	overview := chat.InspectAgencyOverview(a.app)
+	return dialog.AgencyDialogData{
+		ProductName:         overview.ProductName,
+		CurrentConstitution: overview.CurrentConstitution,
+		SoloConstitution:    overview.SoloConstitution,
+		OfficeMode:          overview.OfficeMode,
+		ConsensusMode:       overview.ConsensusMode,
+		SharedWorkplace:     overview.SharedWorkplace,
+		RedisAddress:        overview.RedisAddress,
+		LedgerPath:          overview.LedgerPath,
+		LastEvent:           overview.LastEvent,
+		Blueprint:           overview.Blueprint,
+		TeamTemplate:        overview.TeamTemplate,
+		Governance:          overview.Governance,
+		WorkspaceMode:       overview.WorkspaceMode,
+		Running:             overview.Running,
+		DefaultQuorum:       overview.DefaultQuorum,
+		TeamName:            overview.TeamName,
+		Leader:              overview.Leader,
+		UnreadDirect:        overview.UnreadDirect,
+		UnreadBroadcasts:    overview.UnreadBroadcasts,
+		PendingHandoffs:     overview.PendingHandoffs,
+		MemberCount:         overview.MemberCount,
+		WorkerCount:         overview.WorkerCount,
+		ActiveWorkerCount:   overview.ActiveWorkerCount,
+		BoardReady:          overview.BoardSummary["ready"],
+		BoardActive:         overview.BoardSummary["in_progress"],
+		BoardReview:         overview.BoardSummary["in_review"],
+		BoardDone:           overview.BoardSummary["done"],
+		Thread:              append([]string(nil), overview.Thread...),
+		RequiredGates:       append([]string(nil), overview.RequiredGates...),
+		Constitutions:       append([]string(nil), overview.Constitutions...),
+	}
+}
+
+func emptyString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
 	if a.app.CoderAgent != nil && a.app.CoderAgent.IsBusy() {
 		// For now we don't move to any page if the agent is busy
@@ -706,7 +899,7 @@ func (a *appModel) moveToPage(pageID page.PageID) tea.Cmd {
 	a.previousPage = a.currentPage
 	a.currentPage = pageID
 	if sizable, ok := a.pages[a.currentPage].(layout.Sizeable); ok {
-		cmd := sizable.SetSize(a.width, a.height)
+		cmd := sizable.SetSize(a.width, a.contentHeight())
 		cmds = append(cmds, cmd)
 	}
 
@@ -718,7 +911,9 @@ func (a appModel) View() string {
 		a.pages[a.currentPage].View(),
 	}
 
-	components = append(components, a.status.View())
+	if !a.splashMode {
+		components = append(components, a.status.View())
+	}
 
 	appView := lipgloss.JoinVertical(lipgloss.Top, components...)
 
@@ -795,6 +990,21 @@ func (a appModel) View() string {
 		a.help.SetBindings(bindings)
 
 		overlay := a.help.View()
+		row := lipgloss.Height(appView) / 2
+		row -= lipgloss.Height(overlay) / 2
+		col := lipgloss.Width(appView) / 2
+		col -= lipgloss.Width(overlay) / 2
+		appView = layout.PlaceOverlay(
+			col,
+			row,
+			overlay,
+			appView,
+			true,
+		)
+	}
+
+	if a.showAgencyDialog {
+		overlay := a.agencyDialog.View()
 		row := lipgloss.Height(appView) / 2
 		row -= lipgloss.Height(overlay) / 2
 		col := lipgloss.Width(appView) / 2
@@ -919,6 +1129,7 @@ func New(app *app.App) tea.Model {
 		loadedPages:   make(map[page.PageID]bool),
 		status:        core.NewStatusCmp(app.LSPClients),
 		help:          dialog.NewHelpCmp(),
+		agencyDialog:  dialog.NewAgencyDialogCmp(),
 		quit:          dialog.NewQuitCmp(),
 		sessionDialog: dialog.NewSessionDialogCmp(),
 		commandDialog: dialog.NewCommandDialogCmp(),
@@ -927,6 +1138,7 @@ func New(app *app.App) tea.Model {
 		initDialog:    dialog.NewInitDialogCmp(),
 		themeDialog:   dialog.NewThemeDialogCmp(),
 		app:           app,
+		splashMode:    true,
 		commands:      []dialog.Command{},
 		pages: map[page.PageID]tea.Model{
 			page.ChatPage: page.NewChatPage(app),
@@ -938,7 +1150,7 @@ func New(app *app.App) tea.Model {
 	model.RegisterCommand(dialog.Command{
 		ID:          "init",
 		Title:       "Initialize Project",
-		Description: "Create/Update the TeamCode.md memory file",
+		Description: "Create or update the shared project memory file",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return tea.Batch(
 				util.CmdHandler(chat.SendMsg{
@@ -958,6 +1170,120 @@ func New(app *app.App) tea.Model {
 			}
 		},
 	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "agency-status",
+		Title:       "Agency Status",
+		Description: "Inspect the live Agency office, constitution, and organization state",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.ShowAgencyDialogMsg{})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "agency-bootstrap",
+		Title:       "Boot Agency Office",
+		Description: "Start or reconcile the configured office runtime",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.BootAgencyOfficeMsg{})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "agency-stop",
+		Title:       "Stop Agency Office",
+		Description: "Stop the current office runtime without changing constitutions",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.StopAgencyOfficeMsg{})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "agency-genesis",
+		Title:       "Record Agency Genesis",
+		Description: "Capture a genesis brief and constitution for the current office",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(dialog.ShowMultiArgumentsDialogMsg{
+				CommandID: cmd.ID,
+				Content:   "",
+				ArgNames:  []string{"INTENT", "CONSTITUTION"},
+			})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "team-status",
+		Title:       "Team Status",
+		Description: "Inspect the active team state through the legacy TeamCode lens",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(chat.SendMsg{
+				Text: dialog.TeamStatusPrompt(),
+			})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "team-bootstrap",
+		Title:       "Bootstrap Coding Office",
+		Description: "Bootstrap or reconcile the default Agency coding office constitution",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(chat.SendMsg{
+				Text: dialog.AgencyBootstrapPrompt(""),
+			})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "team-templates",
+		Title:       "List Team Templates",
+		Description: "Summarize the available config-backed team templates and constitutions",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(chat.SendMsg{
+				Text: dialog.AgencyTemplatesPrompt(),
+			})
+		},
+	})
+
+	model.RegisterCommand(dialog.Command{
+		ID:          "skills",
+		Title:       "List Skills",
+		Description: "Summarize installed local skills and how to use them",
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(chat.SendMsg{
+				Text: dialog.ListSkillsPrompt(),
+			})
+		},
+	})
+
+	for _, skillName := range dialog.InstalledSkillNames() {
+		skillName := skillName
+		model.RegisterCommand(dialog.Command{
+			ID:          "skill-" + skillName,
+			Title:       "Use skill " + skillName,
+			Description: "Run a task using the installed " + skillName + " skill",
+			Handler: func(cmd dialog.Command) tea.Cmd {
+				return util.CmdHandler(dialog.ShowMultiArgumentsDialogMsg{
+					CommandID: cmd.ID,
+					Content:   dialog.SkillUsePrompt(skillName, "$TASK"),
+					ArgNames:  []string{"TASK"},
+				})
+			},
+		})
+	}
+
+	for _, templateName := range dialog.ConfiguredTemplateNames() {
+		templateName := templateName
+		model.RegisterCommand(dialog.Command{
+			ID:          "team-bootstrap-" + templateName,
+			Title:       "Activate " + templateName + " office",
+			Description: "Bootstrap the active office using the " + templateName + " constitution",
+			Handler: func(cmd dialog.Command) tea.Cmd {
+				return util.CmdHandler(chat.SendMsg{
+					Text: dialog.AgencyBootstrapPrompt(templateName),
+				})
+			},
+		})
+	}
 	// Load custom commands
 	customCommands, err := dialog.LoadCustomCommands()
 	if err != nil {

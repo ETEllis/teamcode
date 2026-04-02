@@ -126,6 +126,304 @@ func generateSchema() map[string]any {
 		},
 	}
 
+	schema["properties"].(map[string]any)["team"] = map[string]any{
+		"type":        "object",
+		"description": "Collaboration templates and team orchestration defaults",
+		"properties": map[string]any{
+			"activeTeam": map[string]any{
+				"type":        "string",
+				"description": "Preferred active team name for the UI and built-in team commands",
+			},
+			"defaultTemplate": map[string]any{
+				"type":        "string",
+				"description": "Default team template used by bootstrap flows",
+				"default":     "leader-led",
+			},
+			"defaultBlueprint": map[string]any{
+				"type":        "string",
+				"description": "Default Agency blueprint used when loading the coding-office constitution",
+				"default":     "software-team",
+			},
+			"collaborationHud": map[string]any{
+				"type":        "boolean",
+				"description": "Whether to show the collaboration HUD in the sidebar",
+				"default":     true,
+			},
+			"templates": map[string]any{
+				"type":        "object",
+				"description": "User-defined or overridden collaboration templates",
+				"additionalProperties": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Template display name",
+						},
+						"description": map[string]any{
+							"type":        "string",
+							"description": "Short summary of the workflow",
+						},
+						"leadershipMode": map[string]any{
+							"type":        "string",
+							"description": "Leadership style, for example solo, leader-led, peer, or custom",
+						},
+						"spawnTeammates": map[string]any{
+							"type":        "boolean",
+							"description": "Whether bootstrap should spawn teammate sessions immediately",
+						},
+						"roles": map[string]any{
+							"type":        "array",
+							"description": "Ordered role definitions for the template",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"name": map[string]any{
+										"type": "string",
+									},
+									"responsible": map[string]any{
+										"type": "string",
+									},
+									"currentFocus": map[string]any{
+										"type": "string",
+									},
+									"profile": map[string]any{
+										"type": "string",
+										"enum": []string{"coder", "task"},
+									},
+									"prompt": map[string]any{
+										"type": "string",
+									},
+									"reportsTo": map[string]any{
+										"type": "string",
+									},
+									"canSpawnSubagents": map[string]any{
+										"type": "boolean",
+									},
+								},
+								"required": []string{"name"},
+							},
+						},
+						"policies": map[string]any{
+							"type":        "object",
+							"description": "Working agreement and routing defaults",
+							"properties": map[string]any{
+								"commitMessageFormat": map[string]any{
+									"type": "string",
+								},
+								"maxWip": map[string]any{
+									"type":    "integer",
+									"minimum": 1,
+								},
+								"handoffRequires": map[string]any{
+									"type": "array",
+									"items": map[string]any{
+										"type": "string",
+									},
+								},
+								"reviewRequired": map[string]any{
+									"type": "boolean",
+								},
+								"allowsSubagents": map[string]any{
+									"type": "boolean",
+								},
+								"delegationMode": map[string]any{
+									"type": "string",
+								},
+								"localChatDefault": map[string]any{
+									"type": "string",
+								},
+								"reviewRouting": map[string]any{
+									"type": "string",
+								},
+								"synthesisRouting": map[string]any{
+									"type": "string",
+								},
+								"allowsPeerMessaging": map[string]any{
+									"type": "boolean",
+								},
+								"allowsBroadcasts": map[string]any{
+									"type": "boolean",
+								},
+								"workspaceModeDefault": map[string]any{
+									"type": "string",
+								},
+								"loopStrategy": map[string]any{
+									"type": "string",
+								},
+								"concurrencyBudget": map[string]any{
+									"type":    "integer",
+									"minimum": 1,
+								},
+								"requiredGates": map[string]any{
+									"type": "array",
+									"items": map[string]any{
+										"type": "string",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			"blueprints": map[string]any{
+				"type":        "object",
+				"description": "Agency blueprint definitions layered on top of the team template system",
+				"additionalProperties": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	schema["properties"].(map[string]any)["agency"] = map[string]any{
+		"type":        "object",
+		"description": "The Agency runtime configuration surface",
+		"properties": map[string]any{
+			"enabled": map[string]any{
+				"type":        "boolean",
+				"description": "Whether The Agency runtime should be considered active for product surfaces",
+				"default":     false,
+			},
+			"productName": map[string]any{
+				"type":        "string",
+				"description": "Public-facing product identity for the runtime",
+				"default":     "The Agency",
+			},
+			"currentConstitution": map[string]any{
+				"type":        "string",
+				"description": "Currently selected constitution for Agency product paths",
+				"default":     "coding-office",
+			},
+			"soloConstitution": map[string]any{
+				"type":        "string",
+				"description": "Constitution that preserves the solo TeamCode/OpenCode-derived behavior",
+				"default":     "solo",
+			},
+			"office": map[string]any{
+				"type":        "object",
+				"description": "Shared office runtime settings",
+				"properties": map[string]any{
+					"enabled": map[string]any{"type": "boolean", "default": false},
+					"mode": map[string]any{
+						"type":        "string",
+						"description": "Office runtime mode",
+						"default":     "distributed-office",
+					},
+					"autoBoot": map[string]any{"type": "boolean", "default": false},
+					"sharedWorkplace": map[string]any{
+						"type":        "string",
+						"description": "Shared office filesystem root for The Agency runtime",
+					},
+					"stateFile": map[string]any{
+						"type":        "string",
+						"description": "Persistent file storing office runtime status across CLI invocations",
+					},
+					"defaultWorkspaceMode": map[string]any{
+						"type":        "string",
+						"description": "Default workspace mode for agents in the office",
+						"default":     "shared",
+					},
+					"allowSoloFallback": map[string]any{"type": "boolean", "default": true},
+				},
+			},
+			"docker": map[string]any{
+				"type":        "object",
+				"description": "Docker topology settings for the shared office runtime",
+				"properties": map[string]any{
+					"enabled":        map[string]any{"type": "boolean", "default": true},
+					"composeProject": map[string]any{"type": "string"},
+					"composeFile":    map[string]any{"type": "string"},
+					"image":          map[string]any{"type": "string"},
+					"sharedVolume":   map[string]any{"type": "string"},
+					"network":        map[string]any{"type": "string"},
+				},
+			},
+			"redis": map[string]any{
+				"type":        "object",
+				"description": "Redis event bus settings for the Agency office",
+				"properties": map[string]any{
+					"enabled":       map[string]any{"type": "boolean", "default": true},
+					"address":       map[string]any{"type": "string", "default": "127.0.0.1:6379"},
+					"db":            map[string]any{"type": "integer", "minimum": 0, "default": 7},
+					"channelPrefix": map[string]any{"type": "string", "default": "agency"},
+				},
+			},
+			"ledger": map[string]any{
+				"type":        "object",
+				"description": "Append-only ledger and context projection settings",
+				"properties": map[string]any{
+					"backend":        map[string]any{"type": "string", "default": "append-only-log"},
+					"path":           map[string]any{"type": "string"},
+					"snapshotPath":   map[string]any{"type": "string"},
+					"consensusMode":  map[string]any{"type": "string", "default": "distributed-consensus"},
+					"defaultQuorum":  map[string]any{"type": "integer", "minimum": 1, "default": 2},
+					"projectionFile": map[string]any{"type": "string"},
+				},
+			},
+			"schedules": map[string]any{
+				"type":        "object",
+				"description": "Office-hour and shift defaults for persistent organizations",
+				"properties": map[string]any{
+					"timezone":            map[string]any{"type": "string", "default": "local"},
+					"defaultCadence":      map[string]any{"type": "string", "default": "weekday-office-hours"},
+					"wakeOnOfficeOpen":    map[string]any{"type": "boolean", "default": true},
+					"requireShiftHandoff": map[string]any{"type": "boolean", "default": true},
+					"windows": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name":  map[string]any{"type": "string"},
+								"days":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+								"start": map[string]any{"type": "string"},
+								"end":   map[string]any{"type": "string"},
+							},
+						},
+					},
+				},
+			},
+			"genesis": map[string]any{
+				"type":        "object",
+				"description": "Genesis defaults for intent-driven organization creation",
+				"properties": map[string]any{
+					"conversationDriven": map[string]any{"type": "boolean", "default": true},
+					"autoResearch":       map[string]any{"type": "boolean", "default": true},
+					"autoSkills":         map[string]any{"type": "boolean", "default": true},
+					"autoToolBinding":    map[string]any{"type": "boolean", "default": true},
+					"sequentialSpawn":    map[string]any{"type": "boolean", "default": true},
+					"defaultTopology":    map[string]any{"type": "string", "default": "hierarchical"},
+				},
+			},
+			"constitutions": map[string]any{
+				"type":        "object",
+				"description": "Named constitutions that unify solo TeamCode behavior and Agency office behavior",
+				"additionalProperties": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name":            map[string]any{"type": "string"},
+						"description":     map[string]any{"type": "string"},
+						"blueprint":       map[string]any{"type": "string"},
+						"teamTemplate":    map[string]any{"type": "string"},
+						"governance":      map[string]any{"type": "string"},
+						"runtimeMode":     map[string]any{"type": "string"},
+						"entryMode":       map[string]any{"type": "string"},
+						"defaultSchedule": map[string]any{"type": "string"},
+						"policies": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"wakeMode":          map[string]any{"type": "string"},
+								"consensusMode":     map[string]any{"type": "string"},
+								"publicationPolicy": map[string]any{"type": "string"},
+								"spawnMode":         map[string]any{"type": "string"},
+								"defaultQuorum":     map[string]any{"type": "integer", "minimum": 1},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
 	// Add MCP servers
 	schema["properties"].(map[string]any)["mcpServers"] = map[string]any{
 		"type":        "object",

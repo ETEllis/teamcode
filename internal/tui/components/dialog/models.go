@@ -5,15 +5,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/llm/models"
 	"github.com/ETEllis/teamcode/internal/tui/layout"
 	"github.com/ETEllis/teamcode/internal/tui/styles"
 	"github.com/ETEllis/teamcode/internal/tui/theme"
 	"github.com/ETEllis/teamcode/internal/tui/util"
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
@@ -28,6 +28,9 @@ type ModelSelectedMsg struct {
 
 // CloseModelDialogMsg is sent when a model is selected
 type CloseModelDialogMsg struct{}
+
+// ShowModelDialogMsg opens the model selection dialog from another UI surface.
+type ShowModelDialogMsg struct{}
 
 // ModelDialog interface for the model selection dialog
 type ModelDialog interface {

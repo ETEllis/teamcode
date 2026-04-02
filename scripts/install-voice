@@ -1,0 +1,52 @@
+#!/bin/bash
+set -e
+pip install kokoro-onnx soundfile numpy
+mkdir -p .teamcode/agency/voice/models
+# Download Kokoro ONNX model
+MODEL_URL="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v1.0-q8f16.onnx"
+MODEL_PATH=".teamcode/agency/voice/models/model_q8f16.onnx"
+if [ ! -f "$MODEL_PATH" ]; then
+  echo "Downloading Kokoro model..."
+  curl -L "$MODEL_URL" -o "$MODEL_PATH"
+else
+  echo "Model already present, skipping download."
+fi
+
+cat > scripts/kokoro-tts.py << 'PYEOF'
+#!/usr/bin/env python3
+"""Kokoro TTS wrapper — reads JSON from stdin, writes audio to stdout or file.
+
+Input JSON: {"text": "...", "voice": "af_heart", "output_path": "/tmp/out.wav"}
+"""
+import sys, json, os
+
+def main():
+    data = json.load(sys.stdin)
+    text = data.get("text", "")
+    voice = data.get("voice", "af_heart")
+    output_path = data.get("output_path", "/tmp/agency_tts_out.wav")
+
+    try:
+        from kokoro_onnx import Kokoro
+        import soundfile as sf
+        import numpy as np
+
+        model_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            ".teamcode/agency/voice/models/model_q8f16.onnx"
+        )
+        kokoro = Kokoro(model_path, "voices.bin")
+        samples, sample_rate = kokoro.create(text, voice=voice, speed=1.0, lang="en-us")
+        sf.write(output_path, samples, sample_rate)
+        print(json.dumps({"ok": True, "path": output_path}))
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": str(e)}))
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+chmod +x scripts/kokoro-tts.py
+echo "Voice install complete."

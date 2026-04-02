@@ -6,6 +6,8 @@ type Service struct {
 	Handoff *HandoffService
 	Inbox   *InboxService
 	Members *MemberService
+	Runtime *RuntimeService
+	Office  *OfficeService
 }
 
 func NewService() *Service {
@@ -24,5 +26,7 @@ func NewServiceWithStore(sharedStore *store) *Service {
 		Handoff: NewHandoffService(sharedStore),
 		Inbox:   NewInboxService(sharedStore),
 		Members: NewMemberService(sharedStore),
+		Runtime: NewRuntimeService(sharedStore),
+		Office:  NewOfficeService(sharedStore),
 	}
 }

@@ -18,6 +18,130 @@ type File struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+type AgencyAgent struct {
+	ID               string         `json:"id"`
+	OfficeID         string         `json:"office_id"`
+	ConstitutionID   sql.NullString `json:"constitution_id"`
+	ParentAgentID    sql.NullString `json:"parent_agent_id"`
+	IdentityJson     string         `json:"identity_json"`
+	RoleName         string         `json:"role_name"`
+	RuntimeStatus    string         `json:"runtime_status"`
+	LifecyclePhase   string         `json:"lifecycle_phase"`
+	WorkspacePath    string         `json:"workspace_path"`
+	InboxChannel     string         `json:"inbox_channel"`
+	LastSnapshotID   sql.NullString `json:"last_snapshot_id"`
+	LastWakeSignalID sql.NullString `json:"last_wake_signal_id"`
+	CapabilitiesJson string         `json:"capabilities_json"`
+	Metadata         string         `json:"metadata"`
+	UpdatedAt        int64          `json:"updated_at"`
+	CreatedAt        int64          `json:"created_at"`
+}
+
+type AgencyConsensusVote struct {
+	ID            string `json:"id"`
+	OfficeID      string `json:"office_id"`
+	LedgerEntryID string `json:"ledger_entry_id"`
+	AgentID       string `json:"agent_id"`
+	QuorumKey     string `json:"quorum_key"`
+	Decision      string `json:"decision"`
+	Rationale     string `json:"rationale"`
+	Weight        int64  `json:"weight"`
+	Metadata      string `json:"metadata"`
+	CreatedAt     int64  `json:"created_at"`
+}
+
+type AgencyConstitution struct {
+	ID              string `json:"id"`
+	OfficeID        string `json:"office_id"`
+	Name            string `json:"name"`
+	Kind            string `json:"kind"`
+	IsActive        bool   `json:"is_active"`
+	OrgIntent       string `json:"org_intent"`
+	Governance      string `json:"governance"`
+	RoleSpecs       string `json:"role_specs"`
+	CapabilityPacks string `json:"capability_packs"`
+	SchedulePolicy  string `json:"schedule_policy"`
+	Metadata        string `json:"metadata"`
+	UpdatedAt       int64  `json:"updated_at"`
+	CreatedAt       int64  `json:"created_at"`
+}
+
+type AgencyContextSnapshot struct {
+	ID            string         `json:"id"`
+	OfficeID      string         `json:"office_id"`
+	SourceEntryID sql.NullString `json:"source_entry_id"`
+	SnapshotKind  string         `json:"snapshot_kind"`
+	Payload       string         `json:"payload"`
+	CreatedAt     int64          `json:"created_at"`
+}
+
+type AgencyLedgerEntry struct {
+	ID                 string         `json:"id"`
+	OfficeID           string         `json:"office_id"`
+	AgentID            sql.NullString `json:"agent_id"`
+	EntryType          string         `json:"entry_type"`
+	ProposalKind       string         `json:"proposal_kind"`
+	SnapshotID         sql.NullString `json:"snapshot_id"`
+	ParentEntryID      sql.NullString `json:"parent_entry_id"`
+	Status             string         `json:"status"`
+	QuorumKey          string         `json:"quorum_key"`
+	QuorumState        string         `json:"quorum_state"`
+	ActionPayload      string         `json:"action_payload"`
+	ObservationPayload string         `json:"observation_payload"`
+	CommitCertificate  string         `json:"commit_certificate"`
+	Metadata           string         `json:"metadata"`
+	CommittedAt        sql.NullInt64  `json:"committed_at"`
+	CreatedAt          int64          `json:"created_at"`
+}
+
+type AgencyOffice struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Mode             string `json:"mode"`
+	Status           string `json:"status"`
+	BusDriver        string `json:"bus_driver"`
+	ConsensusMode    string `json:"consensus_mode"`
+	WorkspacePath    string `json:"workspace_path"`
+	SharedVolumePath string `json:"shared_volume_path"`
+	RedisAddr        string `json:"redis_addr"`
+	LedgerDriver     string `json:"ledger_driver"`
+	Metadata         string `json:"metadata"`
+	UpdatedAt        int64  `json:"updated_at"`
+	CreatedAt        int64  `json:"created_at"`
+}
+
+type AgencySchedule struct {
+	ID          string         `json:"id"`
+	OfficeID    string         `json:"office_id"`
+	AgentID     sql.NullString `json:"agent_id"`
+	Name        string         `json:"name"`
+	Timezone    string         `json:"timezone"`
+	CronExpr    string         `json:"cron_expr"`
+	WakeEvent   string         `json:"wake_event"`
+	Enabled     bool           `json:"enabled"`
+	LastFiredAt sql.NullInt64  `json:"last_fired_at"`
+	NextFireAt  sql.NullInt64  `json:"next_fire_at"`
+	Metadata    string         `json:"metadata"`
+	UpdatedAt   int64          `json:"updated_at"`
+	CreatedAt   int64          `json:"created_at"`
+}
+
+type AgencyWakeSignal struct {
+	ID             string         `json:"id"`
+	OfficeID       string         `json:"office_id"`
+	AgentID        sql.NullString `json:"agent_id"`
+	ScheduleID     sql.NullString `json:"schedule_id"`
+	SignalType     string         `json:"signal_type"`
+	Channel        string         `json:"channel"`
+	Payload        string         `json:"payload"`
+	Status         string         `json:"status"`
+	AvailableAt    int64          `json:"available_at"`
+	DeliveredAt    sql.NullInt64  `json:"delivered_at"`
+	AcknowledgedAt sql.NullInt64  `json:"acknowledged_at"`
+	CreatedAt      int64          `json:"created_at"`
+}
+
 type Message struct {
 	ID         string         `json:"id"`
 	SessionID  string         `json:"session_id"`

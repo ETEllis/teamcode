@@ -39,6 +39,34 @@ func TestGetContextFromPaths(t *testing.T) {
 	assert.Equal(t, expectedContext, context)
 }
 
+func TestCoderPromptIncludesAgencyRuntime(t *testing.T) {
+	ensurePromptConfigLoaded(t)
+
+	prompt := CoderPrompt("")
+	assert.Contains(t, prompt, "The Agency")
+	assert.Contains(t, prompt, "agency_genesis")
+	assert.Contains(t, prompt, "office_status")
+	assert.Contains(t, prompt, "Solo constitution")
+}
+
+func TestTaskPromptIncludesAgencyLanguage(t *testing.T) {
+	ensurePromptConfigLoaded(t)
+
+	prompt := TaskPrompt("")
+	assert.Contains(t, prompt, "Agency worker agent")
+	assert.Contains(t, prompt, "persistent office agent")
+	assert.Contains(t, prompt, "solo constitution")
+}
+
+func ensurePromptConfigLoaded(t *testing.T) {
+	t.Helper()
+	if config.Get() != nil {
+		return
+	}
+	_, err := config.Load(t.TempDir(), false)
+	require.NoError(t, err)
+}
+
 func createTestFiles(t *testing.T, tmpDir string, testFiles []string) {
 	t.Helper()
 	for _, path := range testFiles {

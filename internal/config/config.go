@@ -89,6 +89,8 @@ type Config struct {
 	Providers    map[models.ModelProvider]Provider `json:"providers,omitempty"`
 	LSP          map[string]LSPConfig              `json:"lsp,omitempty"`
 	Agents       map[AgentName]Agent               `json:"agents,omitempty"`
+	Team         TeamConfig                        `json:"team,omitempty"`
+	Agency       AgencyConfig                      `json:"agency,omitempty"`
 	Debug        bool                              `json:"debug,omitempty"`
 	DebugLSP     bool                              `json:"debugLSP,omitempty"`
 	ContextPaths []string                          `json:"contextPaths,omitempty"`
@@ -245,6 +247,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("contextPaths", defaultContextPaths)
 	viper.SetDefault("tui.theme", "teamcode")
 	viper.SetDefault("autoCompact", true)
+	viper.SetDefault("agency.productName", "The Agency")
 
 	// Set default shell from environment or fallback to /bin/bash
 	shellPath := os.Getenv("SHELL")
@@ -458,7 +461,12 @@ func readConfig(err error) error {
 		return nil
 	}
 
-	return fmt.Errorf("failed to read config: %w", err)
+	// Global user config should not brick a valid repo-local runtime.
+	// If the machine-level config is malformed, keep going and let the local
+	// working tree configuration take precedence.
+	logging.Warn("ignoring malformed global config", "error", err)
+	return nil
+
 }
 
 // mergeLocalConfig loads and merges configuration from the local directory.
@@ -501,7 +509,8 @@ func mergeLegacyGlobalConfig() error {
 	if errors.As(err, &configFileNotFoundError) {
 		return nil
 	}
-	return fmt.Errorf("failed to read legacy config: %w", err)
+	logging.Warn("ignoring malformed legacy global config", "error", err)
+	return nil
 }
 
 // applyDefaultValues sets default values for configuration fields that need processing.
@@ -513,6 +522,9 @@ func applyDefaultValues() {
 			cfg.MCPServers[k] = v
 		}
 	}
+
+	cfg.Team = normalizeTeamConfig(cfg.Team)
+	cfg.Agency = normalizeAgencyConfig(cfg.Agency, cfg.Team, cfg.Data.Directory)
 }
 
 // It validates model IDs and providers, ensuring they are supported.
@@ -681,6 +693,10 @@ func Validate() error {
 		}
 	}
 
+	if err := ValidateAgencyConfig(cfg.Agency); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -720,7 +736,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 		}
 
 		cfg.Agents[agent] = Agent{
-			Model:     models.CopilotGPT4o,
+			Model:     models.CopilotClaude4,
 			MaxTokens: maxTokens,
 		}
 		return true
@@ -732,7 +748,7 @@ func setDefaultModelForAgent(agent AgentName) bool {
 			maxTokens = 80
 		}
 		cfg.Agents[agent] = Agent{
-			Model:     models.Claude37Sonnet,
+			Model:     models.Claude4Sonnet,
 			MaxTokens: maxTokens,
 		}
 		return true
@@ -866,7 +882,7 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 	}
 
 	// Get the config file path
-	configFile := viper.ConfigFileUsed()
+	configFile := preferredConfigFile()
 	var configData []byte
 	if configFile == "" {
 		homeDir, err := os.UserHomeDir()
@@ -890,6 +906,9 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 	if err := json.Unmarshal(configData, &userCfg); err != nil {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
+	if userCfg == nil {
+		userCfg = &Config{}
+	}
 
 	updateCfg(userCfg)
 
@@ -904,6 +923,22 @@ func updateCfgFile(updateCfg func(config *Config)) error {
 	}
 
 	return nil
+}
+
+func preferredConfigFile() string {
+	if cfg != nil && strings.TrimSpace(cfg.WorkingDir) != "" {
+		local := filepath.Join(cfg.WorkingDir, fmt.Sprintf(".%s.json", appName))
+		if _, err := os.Stat(local); err == nil {
+			return local
+		}
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		local := filepath.Join(cwd, fmt.Sprintf(".%s.json", appName))
+		if _, err := os.Stat(local); err == nil {
+			return local
+		}
+	}
+	return viper.ConfigFileUsed()
 }
 
 // Get returns the current configuration.

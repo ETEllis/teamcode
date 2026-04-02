@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/message"
@@ -24,12 +27,20 @@ type cacheItem struct {
 	width   int
 	content []uiMessage
 }
+// AgencyBroadcastMsg is a tea message carrying a live agent broadcast.
+type AgencyBroadcastMsg struct {
+	app.BroadcastMsg
+}
+
 type messagesCmp struct {
 	app           *app.App
 	width, height int
 	viewport      viewport.Model
 	session       session.Session
 	messages      []message.Message
+	broadcasts    []app.BroadcastMsg
+	bulletins     []app.BulletinRecord
+	splashMode    bool
 	uiMessages    []uiMessage
 	currentMsgID  string
 	cachedContent map[string]cacheItem
@@ -86,7 +97,8 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = make([]message.Message, 0)
 		m.currentMsgID = ""
 		m.rendering = false
-		return m, nil
+		m.splashMode = true
+		return m, util.CmdHandler(SplashModeChangedMsg{Active: true})
 
 	case tea.KeyMsg:
 		if key.Matches(msg, messageKeys.PageUp) || key.Matches(msg, messageKeys.PageDown) ||
@@ -98,6 +110,14 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case renderFinishedMsg:
 		m.rendering = false
+		m.viewport.GotoBottom()
+	case AgencyBroadcastMsg:
+		m.broadcasts = append(m.broadcasts, msg.BroadcastMsg)
+		m.rerender()
+		m.viewport.GotoBottom()
+	case AgencyBulletinMsg:
+		m.bulletins = append(m.bulletins, msg.BulletinRecord)
+		m.rerender()
 		m.viewport.GotoBottom()
 	case pubsub.Event[session.Session]:
 		if msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == m.session.ID {
@@ -152,12 +172,17 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if needsRerender {
+			previousSplashMode := m.splashMode
+			m.splashMode = len(m.messages) == 0
 			m.renderView()
 			if len(m.messages) > 0 {
 				if (msg.Type == pubsub.CreatedEvent) ||
 					(msg.Type == pubsub.UpdatedEvent && msg.Payload.ID == m.messages[len(m.messages)-1].ID) {
 					m.viewport.GotoBottom()
 				}
+			}
+			if previousSplashMode != m.splashMode {
+				cmds = append(cmds, util.CmdHandler(SplashModeChangedMsg{Active: m.splashMode}))
 			}
 		}
 	}
@@ -253,6 +278,26 @@ func (m *messagesCmp) renderView() {
 		)
 	}
 
+	// Append live agent broadcast bubbles (iMessage-style).
+	if len(m.broadcasts) > 0 {
+		for _, b := range m.broadcasts {
+			messages = append(messages,
+				renderBroadcastBubble(b, m.width),
+				baseStyle.Width(m.width).Render(""),
+			)
+		}
+	}
+
+	// Append bulletin timeline entries (directive→output→score).
+	if len(m.bulletins) > 0 {
+		for _, b := range m.bulletins {
+			messages = append(messages,
+				renderBulletinEntry(b, m.width),
+				baseStyle.Width(m.width).Render(""),
+			)
+		}
+	}
+
 	m.viewport.SetContent(
 		baseStyle.
 			Width(m.width).
@@ -283,21 +328,12 @@ func (m *messagesCmp) View() string {
 	if len(m.messages) == 0 {
 		content := baseStyle.
 			Width(m.width).
-			Height(m.height - 1).
+			Height(max(0, m.height)).
 			Render(
-				m.initialScreen(),
+				renderSplash(m.app, m.width, m.height),
 			)
 
-		return baseStyle.
-			Width(m.width).
-			Render(
-				lipgloss.JoinVertical(
-					lipgloss.Top,
-					content,
-					"",
-					m.help(),
-				),
-			)
+		return baseStyle.Width(m.width).Render(content)
 	}
 
 	return baseStyle.
@@ -403,19 +439,6 @@ func (m *messagesCmp) help() string {
 		Render(text)
 }
 
-func (m *messagesCmp) initialScreen() string {
-	baseStyle := styles.BaseStyle()
-
-	return baseStyle.Width(m.width).Render(
-		lipgloss.JoinVertical(
-			lipgloss.Top,
-			header(m.width),
-			"",
-			lspsConfigured(m.width),
-		),
-	)
-}
-
 func (m *messagesCmp) rerender() {
 	for _, msg := range m.messages {
 		delete(m.cachedContent, msg.ID)
@@ -453,13 +476,19 @@ func (m *messagesCmp) SetSession(session session.Session) tea.Cmd {
 	m.messages = messages
 	if len(m.messages) > 0 {
 		m.currentMsgID = m.messages[len(m.messages)-1].ID
+	} else {
+		m.currentMsgID = ""
 	}
+	m.splashMode = len(m.messages) == 0
 	delete(m.cachedContent, m.currentMsgID)
 	m.rendering = true
-	return func() tea.Msg {
-		m.renderView()
-		return renderFinishedMsg{}
-	}
+	return tea.Batch(
+		util.CmdHandler(SplashModeChangedMsg{Active: m.splashMode}),
+		func() tea.Msg {
+			m.renderView()
+			return renderFinishedMsg{}
+		},
+	)
 }
 
 func (m *messagesCmp) BindingKeys() []key.Binding {
@@ -486,5 +515,120 @@ func NewMessagesCmp(app *app.App) tea.Model {
 		viewport:      vp,
 		spinner:       s,
 		attachments:   attachmets,
+		splashMode:    true,
 	}
+}
+
+// roleColorPalette maps role hash index → theme color selector.
+// Cycles through Primary, Secondary, Accent, Success, Warning, Info.
+var roleColorIndex = []func(theme.Theme) lipgloss.AdaptiveColor{
+	func(t theme.Theme) lipgloss.AdaptiveColor { return t.Primary() },
+	func(t theme.Theme) lipgloss.AdaptiveColor { return t.Secondary() },
+	func(t theme.Theme) lipgloss.AdaptiveColor { return t.Accent() },
+	func(t theme.Theme) lipgloss.AdaptiveColor { return t.Success() },
+	func(t theme.Theme) lipgloss.AdaptiveColor { return t.Warning() },
+	func(t theme.Theme) lipgloss.AdaptiveColor { return t.Info() },
+}
+
+// actorColor deterministically picks a color for an actor ID.
+func actorColor(actorID string) func(theme.Theme) lipgloss.AdaptiveColor {
+	h := 0
+	for _, r := range actorID {
+		h = h*31 + int(r)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return roleColorIndex[h%len(roleColorIndex)]
+}
+
+// actorInitials returns 2-char uppercase initials from an actor ID.
+func actorInitials(actorID string) string {
+	if actorID == "" {
+		return "AG"
+	}
+	// Use last segment of dot-separated ID (e.g. "org.developer.alice" → "alice")
+	parts := strings.Split(actorID, ".")
+	name := parts[len(parts)-1]
+	name = strings.ToUpper(strings.TrimSpace(name))
+	if utf8.RuneCountInString(name) >= 2 {
+		runes := []rune(name)
+		return string(runes[:2])
+	}
+	if len(name) == 1 {
+		return name + name
+	}
+	return "AG"
+}
+
+// renderBroadcastBubble renders a single agent broadcast as an iMessage-style bubble.
+func renderBroadcastBubble(b app.BroadcastMsg, width int) string {
+	t := theme.CurrentTheme()
+	base := styles.BaseStyle()
+
+	colorFn := actorColor(b.ActorID)
+	roleColor := colorFn(t)
+
+	// Avatar (2-char initials in a colored box).
+	avatarStyle := base.
+		Bold(true).
+		Foreground(t.Background()).
+		Background(roleColor).
+		Padding(0, 1)
+	avatar := avatarStyle.Render(actorInitials(b.ActorID))
+
+	// Actor name label.
+	actor := b.ActorID
+	if actor == "" {
+		actor = "agent"
+	}
+	nameStyle := base.Bold(true).Foreground(roleColor)
+	nameLabel := nameStyle.Render(actor)
+
+	// Timestamp.
+	ts := ""
+	if b.CreatedAt > 0 {
+		ts = time.UnixMilli(b.CreatedAt).Format("15:04")
+	}
+	tsStyle := base.Foreground(t.TextMuted())
+	tsLabel := tsStyle.Render(ts)
+
+	// Header row: avatar + name + timestamp.
+	avatarWidth := lipgloss.Width(avatar)
+	nameWidth := lipgloss.Width(nameLabel)
+	tsWidth := lipgloss.Width(tsLabel)
+	gap := width - avatarWidth - nameWidth - tsWidth - 3
+	if gap < 0 {
+		gap = 0
+	}
+	header := lipgloss.JoinHorizontal(lipgloss.Left,
+		avatar,
+		" ",
+		nameLabel,
+		strings.Repeat(" ", gap),
+		tsLabel,
+	)
+
+	// Message bubble.
+	bubbleWidth := width - avatarWidth - 2
+	if bubbleWidth < 10 {
+		bubbleWidth = 10
+	}
+	bubbleStyle := base.
+		Width(bubbleWidth).
+		BorderLeft(true).
+		BorderStyle(lipgloss.ThickBorder()).
+		BorderForeground(roleColor).
+		Foreground(t.Text()).
+		PaddingLeft(1)
+
+	bubble := lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		lipgloss.JoinHorizontal(lipgloss.Left,
+			strings.Repeat(" ", avatarWidth+1),
+			bubbleStyle.Render(b.Message),
+		),
+	)
+
+	return base.Width(width).Render(bubble)
 }

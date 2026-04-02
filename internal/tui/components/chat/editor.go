@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type editorCmp struct {
@@ -31,6 +32,7 @@ type editorCmp struct {
 	textarea    textarea.Model
 	attachments []message.Attachment
 	deleteMode  bool
+	splashMode  bool
 }
 
 type EditorKeyMaps struct {
@@ -156,6 +158,9 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.session = msg
 		}
 		return m, nil
+	case SplashModeChangedMsg:
+		m.splashMode = msg.Active
+		return m, nil
 	case dialog.AttachmentAddedMsg:
 		if len(m.attachments) >= maxAttachments {
 			logging.ErrorPersist(fmt.Sprintf("cannot add more than %d images", maxAttachments))
@@ -228,14 +233,54 @@ func (m *editorCmp) View() string {
 		Bold(true).
 		Foreground(t.Primary())
 
+	if m.splashMode {
+		composerWidth := min(max(48, m.width-16), 72)
+		footerLeft := styles.BaseStyle().
+			Foreground(t.TextMuted()).
+			Render("enter send")
+		modelLabel := ansi.Truncate(splashModelLabel(), min(22, composerWidth/3), "…")
+		footerRight := styles.BaseStyle().
+			Foreground(t.TextMuted()).
+			Render(modelLabel)
+		textareaWidth := max(1, composerWidth-lipgloss.Width(footerLeft)-lipgloss.Width(footerRight)-7)
+		m.textarea.SetHeight(1)
+		m.textarea.SetWidth(textareaWidth)
+		textareaView := m.textarea.View()
+		composer := styles.BaseStyle().
+			Width(composerWidth).
+			Padding(0, 1).
+			Background(t.BackgroundSecondary()).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(t.BorderDim()).
+			Render(lipgloss.JoinHorizontal(
+				lipgloss.Center,
+				footerLeft,
+				"  ",
+				style.Render(">"),
+				textareaView,
+				"  ",
+				footerRight,
+			))
+
+		return lipgloss.PlaceHorizontal(
+			m.width,
+			lipgloss.Center,
+			composer,
+		)
+	}
+
+	m.textarea.SetHeight(max(1, m.height))
+	m.textarea.SetWidth(max(1, m.width-3))
+	textareaView := m.textarea.View()
+
 	if len(m.attachments) == 0 {
-		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), m.textarea.View())
+		return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"), textareaView)
 	}
 	m.textarea.SetHeight(m.height - 1)
 	return lipgloss.JoinVertical(lipgloss.Top,
 		m.attachmentsContent(),
 		lipgloss.JoinHorizontal(lipgloss.Top, style.Render(">"),
-			m.textarea.View()),
+			textareaView),
 	)
 }
 
@@ -244,7 +289,6 @@ func (m *editorCmp) SetSize(width, height int) tea.Cmd {
 	m.height = height
 	m.textarea.SetWidth(width - 3) // account for the prompt and padding right
 	m.textarea.SetHeight(height)
-	m.textarea.SetWidth(width)
 	return nil
 }
 
@@ -315,7 +359,8 @@ func CreateTextArea(existing *textarea.Model) textarea.Model {
 func NewEditorCmp(app *app.App) tea.Model {
 	ta := CreateTextArea(nil)
 	return &editorCmp{
-		app:      app,
-		textarea: ta,
+		app:        app,
+		splashMode: true,
+		textarea:   ta,
 	}
 }

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="$ROOT_DIR/docker-compose.agency.yml"
+
+usage() {
+  cat <<'EOF'
+agency-office <command>
+
+Commands:
+  up                    Build and start the distributed Agency office
+  down                  Stop the Agency office services
+  restart               Restart the Agency office services
+  logs [service]        Tail logs for all services or a single service
+  ps                    Show office service status
+  shell [service]       Open a shell in a service container
+  exec [service] ...    Run a command inside a service container
+  redis                 Open redis-cli in the Redis service
+  actor-specs           List persisted actor runtime specs
+  config                Print the fully rendered compose configuration
+
+Services:
+  office-coordinator
+  runtime-daemon
+  scheduler-daemon
+  redis
+EOF
+}
+
+cmd="${1:-}"
+
+if [[ -z "$cmd" ]]; then
+  usage
+  exit 1
+fi
+
+case "$cmd" in
+  up)
+    docker compose -f "$COMPOSE_FILE" up --build -d
+    ;;
+  down)
+    docker compose -f "$COMPOSE_FILE" down
+    ;;
+  restart)
+    docker compose -f "$COMPOSE_FILE" down
+    docker compose -f "$COMPOSE_FILE" up --build -d
+    ;;
+  logs)
+    shift
+    if [[ $# -gt 0 ]]; then
+      docker compose -f "$COMPOSE_FILE" logs -f "$1"
+    else
+      docker compose -f "$COMPOSE_FILE" logs -f
+    fi
+    ;;
+  ps)
+    docker compose -f "$COMPOSE_FILE" ps
+    ;;
+  shell)
+    shift
+    service="${1:-office-coordinator}"
+    docker compose -f "$COMPOSE_FILE" exec "$service" /bin/bash
+    ;;
+  exec)
+    shift
+    service="office-coordinator"
+    if [[ $# -gt 0 ]]; then
+      case "$1" in
+        office-coordinator|runtime-daemon|scheduler-daemon|redis)
+          service="$1"
+          shift
+          ;;
+      esac
+    fi
+    if [[ $# -eq 0 ]]; then
+      echo "exec requires a command" >&2
+      exit 1
+    fi
+    docker compose -f "$COMPOSE_FILE" exec "$service" "$@"
+    ;;
+  redis)
+    docker compose -f "$COMPOSE_FILE" exec redis redis-cli
+    ;;
+  actor-specs)
+    docker compose -f "$COMPOSE_FILE" exec runtime-daemon /bin/bash -lc 'ls -1 /shared_workplace/.agency/runtime/actors 2>/dev/null || true'
+    ;;
+  config)
+    docker compose -f "$COMPOSE_FILE" config
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

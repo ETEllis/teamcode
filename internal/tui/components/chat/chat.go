@@ -25,6 +25,10 @@ type SessionClearedMsg struct{}
 
 type EditorFocusMsg bool
 
+type SplashModeChangedMsg struct {
+	Active bool
+}
+
 func header(width int) string {
 	return lipgloss.JoinVertical(
 		lipgloss.Top,
@@ -98,12 +102,12 @@ func lspsConfigured(width int) string {
 }
 
 func logo(width int) string {
-	logo := fmt.Sprintf("%s %s", styles.TeamCodeIcon, "TeamCode")
+	logo := fmt.Sprintf("%s %s", styles.TeamCodeIcon, "The Agency")
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 	versionText := baseStyle.
 		Foreground(t.TextMuted()).
-		Render(version.Version)
+		Render(version.Version + "  ·  teamcode runtime")
 
 	return baseStyle.
 		Bold(true).
@@ -119,7 +123,7 @@ func logo(width int) string {
 }
 
 func repo(width int) string {
-	repo := "https://github.com/ETEllis/teamcode"
+	repo := "runtime repo: https://github.com/ETEllis/teamcode"
 	t := theme.CurrentTheme()
 
 	return styles.BaseStyle().

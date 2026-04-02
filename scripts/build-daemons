@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+mkdir -p dist
+
+echo "Building agency daemons..."
+go build -o dist/agency-office-daemon    ./internal/agency/cmd/office-daemon
+go build -o dist/agency-runtime-daemon   ./internal/agency/cmd/runtime-daemon
+go build -o dist/agency-scheduler-daemon ./internal/agency/cmd/scheduler-daemon
+go build -o dist/agency-actor-daemon     ./internal/agency/cmd/actor-daemon
+
+echo "Built:"
+ls -lh dist/agency-*-daemon

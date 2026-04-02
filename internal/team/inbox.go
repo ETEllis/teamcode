@@ -12,6 +12,7 @@ type InboxMessage struct {
 	Read      bool   `json:"read"`
 	Summary   string `json:"summary,omitempty"`
 	Color     string `json:"color,omitempty"`
+	Broadcast bool   `json:"broadcast,omitempty"`
 }
 
 type InboxService struct {
@@ -41,6 +42,10 @@ func (s *InboxService) ReadInbox(ctx context.Context, teamName, agentName string
 }
 
 func (s *InboxService) SendMessage(ctx context.Context, teamName, from, to, content, summary string) error {
+	return s.sendMessage(ctx, teamName, from, to, content, summary, false)
+}
+
+func (s *InboxService) sendMessage(ctx context.Context, teamName, from, to, content, summary string, broadcast bool) error {
 	_ = ctx
 	messages, err := s.store.readInbox(teamName, to)
 	if err != nil {
@@ -52,6 +57,7 @@ func (s *InboxService) SendMessage(ctx context.Context, teamName, from, to, cont
 		Timestamp: time.Now().Format(time.RFC3339),
 		Read:      false,
 		Summary:   summary,
+		Broadcast: broadcast,
 	})
 	return s.store.writeInbox(teamName, to, messages)
 }
@@ -63,7 +69,7 @@ func (s *InboxService) Broadcast(ctx context.Context, teamName, from, content, s
 		return err
 	}
 	for _, recipient := range recipients {
-		if err := s.SendMessage(context.Background(), teamName, from, recipient, content, summary); err != nil {
+		if err := s.sendMessage(context.Background(), teamName, from, recipient, content, summary, true); err != nil {
 			return err
 		}
 	}

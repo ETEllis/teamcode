@@ -28,22 +28,57 @@ const (
 	WorkerStatusCanceled  WorkerStatus = "canceled"
 )
 
+type WorkerStateScope string
+
+const (
+	WorkerStateScopeLocal     WorkerStateScope = "local"
+	WorkerStateScopeCommitted WorkerStateScope = "committed"
+)
+
+type WorkerCommitmentState string
+
+const (
+	WorkerCommitmentStateLocal     WorkerCommitmentState = "local"
+	WorkerCommitmentStatePending   WorkerCommitmentState = "pending"
+	WorkerCommitmentStateCommitted WorkerCommitmentState = "committed"
+	WorkerCommitmentStateRejected  WorkerCommitmentState = "rejected"
+)
+
+type WorkerWakeState string
+
+const (
+	WorkerWakeStateWaiting   WorkerWakeState = "waiting"
+	WorkerWakeStateActive    WorkerWakeState = "active"
+	WorkerWakeStateQuiescent WorkerWakeState = "quiescent"
+)
+
 type Worker struct {
-	ID              string       `json:"id"`
-	SessionID       string       `json:"sessionId"`
-	ParentSessionID string       `json:"parentSessionId"`
-	Name            string       `json:"name,omitempty"`
-	TeamName        string       `json:"teamName,omitempty"`
-	RoleName        string       `json:"roleName,omitempty"`
-	Kind            WorkerKind   `json:"kind"`
-	Profile         string       `json:"profile,omitempty"`
-	Status          WorkerStatus `json:"status"`
-	Prompt          string       `json:"prompt"`
-	Result          string       `json:"result,omitempty"`
-	Error           string       `json:"error,omitempty"`
-	CreatedAt       int64        `json:"createdAt"`
-	UpdatedAt       int64        `json:"updatedAt"`
-	CompletedAt     int64        `json:"completedAt,omitempty"`
+	ID              string                `json:"id"`
+	SessionID       string                `json:"sessionId"`
+	ParentSessionID string                `json:"parentSessionId"`
+	ParentWorkerID  string                `json:"parentWorkerId,omitempty"`
+	RootWorkerID    string                `json:"rootWorkerId,omitempty"`
+	Lineage         []string              `json:"lineage,omitempty"`
+	LineageDepth    int                   `json:"lineageDepth,omitempty"`
+	Name            string                `json:"name,omitempty"`
+	TeamName        string                `json:"teamName,omitempty"`
+	RoleName        string                `json:"roleName,omitempty"`
+	Kind            WorkerKind            `json:"kind"`
+	Profile         string                `json:"profile,omitempty"`
+	Status          WorkerStatus          `json:"status"`
+	StateScope      WorkerStateScope      `json:"stateScope,omitempty"`
+	CommitmentState WorkerCommitmentState `json:"commitmentState,omitempty"`
+	WorkspaceMode   string                `json:"workspaceMode,omitempty"`
+	WakeState       WorkerWakeState       `json:"wakeState,omitempty"`
+	Prompt          string                `json:"prompt"`
+	Result          string                `json:"result,omitempty"`
+	Error           string                `json:"error,omitempty"`
+	StartedAt       int64                 `json:"startedAt,omitempty"`
+	LastSignalAt    int64                 `json:"lastSignalAt,omitempty"`
+	LastHeartbeatAt int64                 `json:"lastHeartbeatAt,omitempty"`
+	CreatedAt       int64                 `json:"createdAt"`
+	UpdatedAt       int64                 `json:"updatedAt"`
+	CompletedAt     int64                 `json:"completedAt,omitempty"`
 }
 
 type RunRequest struct {
@@ -60,6 +95,7 @@ type Runner func(ctx context.Context, sessionID string, request RunRequest) (<-c
 
 type SpawnParams struct {
 	ParentSessionID string
+	ParentWorkerID  string
 	Name            string
 	TeamName        string
 	RoleName        string
@@ -67,6 +103,9 @@ type SpawnParams struct {
 	Profile         string
 	Prompt          string
 	Title           string
+	WorkspaceMode   string
+	StateScope      WorkerStateScope
+	CommitmentState WorkerCommitmentState
 }
 
 type workerState struct {
@@ -115,6 +154,15 @@ func (m *Manager) Spawn(ctx context.Context, params SpawnParams) (Worker, error)
 	if params.Profile == "" {
 		params.Profile = "coder"
 	}
+	if params.WorkspaceMode == "" {
+		params.WorkspaceMode = "shared"
+	}
+	if params.StateScope == "" {
+		params.StateScope = WorkerStateScopeLocal
+	}
+	if params.CommitmentState == "" {
+		params.CommitmentState = WorkerCommitmentStateLocal
+	}
 
 	workerID := uuid.NewString()
 	title := params.Title
@@ -136,18 +184,28 @@ func (m *Manager) Spawn(ctx context.Context, params SpawnParams) (Worker, error)
 	}
 
 	now := time.Now().UnixMilli()
+	rootWorkerID, lineage := m.lineageForSpawn(params.ParentWorkerID, workerID)
 	state := &workerState{
 		worker: Worker{
 			ID:              workerID,
 			SessionID:       sess.ID,
 			ParentSessionID: params.ParentSessionID,
+			ParentWorkerID:  params.ParentWorkerID,
+			RootWorkerID:    rootWorkerID,
+			Lineage:         lineage,
+			LineageDepth:    len(lineage) - 1,
 			Name:            params.Name,
 			TeamName:        params.TeamName,
 			RoleName:        params.RoleName,
 			Kind:            params.Kind,
 			Profile:         params.Profile,
 			Status:          WorkerStatusQueued,
+			StateScope:      params.StateScope,
+			CommitmentState: params.CommitmentState,
+			WorkspaceMode:   params.WorkspaceMode,
+			WakeState:       WorkerWakeStateWaiting,
 			Prompt:          params.Prompt,
+			LastSignalAt:    now,
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		},
@@ -168,8 +226,13 @@ func (m *Manager) Spawn(ctx context.Context, params SpawnParams) (Worker, error)
 
 func (m *Manager) runWorker(ctx context.Context, runner Runner, state *workerState) {
 	m.update(state.worker.ID, func(worker *Worker) {
+		now := time.Now().UnixMilli()
 		worker.Status = WorkerStatusRunning
-		worker.UpdatedAt = time.Now().UnixMilli()
+		worker.WakeState = WorkerWakeStateActive
+		worker.StartedAt = now
+		worker.LastSignalAt = now
+		worker.LastHeartbeatAt = now
+		worker.UpdatedAt = now
 	})
 
 	resultCh, err := runner(ctx, state.worker.SessionID, RunRequest{
@@ -200,6 +263,7 @@ func (m *Manager) runWorker(ctx context.Context, runner Runner, state *workerSta
 
 func (m *Manager) finish(workerID string, status WorkerStatus, content string, err error) {
 	m.update(workerID, func(worker *Worker) {
+		now := time.Now().UnixMilli()
 		worker.Status = status
 		worker.Result = content
 		if err != nil {
@@ -207,7 +271,9 @@ func (m *Manager) finish(workerID string, status WorkerStatus, content string, e
 		} else {
 			worker.Error = ""
 		}
-		worker.CompletedAt = time.Now().UnixMilli()
+		worker.WakeState = WorkerWakeStateQuiescent
+		worker.LastHeartbeatAt = now
+		worker.CompletedAt = now
 		worker.UpdatedAt = worker.CompletedAt
 	})
 
@@ -227,6 +293,31 @@ func (m *Manager) update(workerID string, fn func(*Worker)) {
 		return
 	}
 	fn(&state.worker)
+}
+
+func (m *Manager) lineageForSpawn(parentWorkerID, workerID string) (string, []string) {
+	if parentWorkerID == "" {
+		return workerID, []string{workerID}
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	state := m.workers[parentWorkerID]
+	if state == nil {
+		return workerID, []string{workerID}
+	}
+
+	rootWorkerID := state.worker.RootWorkerID
+	if rootWorkerID == "" {
+		rootWorkerID = state.worker.ID
+	}
+	lineage := append([]string{}, state.worker.Lineage...)
+	if len(lineage) == 0 {
+		lineage = []string{state.worker.ID}
+	}
+	lineage = append(lineage, workerID)
+	return rootWorkerID, lineage
 }
 
 func (m *Manager) Get(workerID string) (Worker, bool) {
@@ -260,6 +351,35 @@ func (m *Manager) Wait(ctx context.Context, workerID string) (Worker, error) {
 	return worker, nil
 }
 
+func (m *Manager) MarkHeartbeat(workerID string) {
+	m.update(workerID, func(worker *Worker) {
+		now := time.Now().UnixMilli()
+		worker.LastHeartbeatAt = now
+		worker.UpdatedAt = now
+	})
+}
+
+func (m *Manager) RecordSignal(workerID string, wakeState WorkerWakeState) {
+	m.update(workerID, func(worker *Worker) {
+		now := time.Now().UnixMilli()
+		worker.WakeState = wakeState
+		worker.LastSignalAt = now
+		worker.UpdatedAt = now
+	})
+}
+
+func (m *Manager) SetCommitment(workerID string, scope WorkerStateScope, commitment WorkerCommitmentState) {
+	m.update(workerID, func(worker *Worker) {
+		if scope != "" {
+			worker.StateScope = scope
+		}
+		if commitment != "" {
+			worker.CommitmentState = commitment
+		}
+		worker.UpdatedAt = time.Now().UnixMilli()
+	})
+}
+
 func (m *Manager) Cancel(workerID string) error {
 	m.mu.RLock()
 	state := m.workers[workerID]
@@ -286,6 +406,17 @@ func (m *Manager) ListByParent(parentSessionID string) []Worker {
 	return workers
 }
 
+func (m *Manager) List() []Worker {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	workers := make([]Worker, 0, len(m.workers))
+	for _, state := range m.workers {
+		workers = append(workers, state.worker)
+	}
+	return workers
+}
+
 func (m *Manager) ListByTeam(teamName string) []Worker {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -293,6 +424,23 @@ func (m *Manager) ListByTeam(teamName string) []Worker {
 	workers := make([]Worker, 0)
 	for _, state := range m.workers {
 		if state.worker.TeamName == teamName {
+			workers = append(workers, state.worker)
+		}
+	}
+	return workers
+}
+
+func (m *Manager) ListByRoot(rootWorkerID string) []Worker {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	workers := make([]Worker, 0)
+	for _, state := range m.workers {
+		rootID := state.worker.RootWorkerID
+		if rootID == "" {
+			rootID = state.worker.ID
+		}
+		if rootID == rootWorkerID {
 			workers = append(workers, state.worker)
 		}
 	}

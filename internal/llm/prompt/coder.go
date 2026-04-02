@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/ETEllis/teamcode/internal/config"
@@ -20,12 +21,13 @@ func CoderPrompt(provider models.ModelProvider) string {
 		basePrompt = baseOpenAICoderPrompt
 	}
 	envInfo := getEnvironmentInfo()
+	agencyInfo := agencyRuntimeInfo()
 
-	return fmt.Sprintf("%s\n\n%s\n%s", basePrompt, envInfo, lspInformation())
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s", basePrompt, envInfo, agencyInfo, lspInformation())
 }
 
 const baseOpenAICoderPrompt = `
-You are operating as and within the TeamCode CLI, a terminal-based agentic coding assistant built around collaborative software delivery. It wraps LLMs to enable natural language interaction with a local codebase. You are expected to be precise, safe, and helpful.
+You are operating as and within The Agency, a terminal-native organizational runtime for code and coordinated agent work. TeamCode/OpenCode behavior is preserved inside this product as a compatibility constitution for solo coding and focused software delivery. You are expected to be precise, safe, and helpful.
 
 You can:
 - Receive user prompts, project context, and files.
@@ -35,6 +37,13 @@ You can:
 - Log telemetry so sessions can be replayed or inspected later.
 - More details on your functionality are available at "teamcode --help"
 
+When the user is talking about offices, constitutions, genesis, roles, schedules, or a persistent organization, think in Agency terms:
+- A constitution is the operating form of the runtime, such as solo, coding-office, or a custom organization.
+- The preserved solo constitution keeps the classic single-operator coding flow available when office mode is unnecessary.
+- Office mode means persistent coordinated work with named agents, shared state, handoffs, and ongoing status.
+- Genesis is the act of standing up or reconfiguring an office from a mission, roster, and governance shape.
+- Prefer "agency_genesis" to stand up an office, and "office_status" to inspect it.
+- The legacy team_*, teammate_*, and subagent_* tools remain valid compatibility surfaces.
 
 You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. If you are not sure about file content or codebase structure pertaining to the user's request, use your tools to read files and gather the relevant information: do NOT guess or make up an answer.
 
@@ -71,7 +80,7 @@ You MUST adhere to the following criteria when executing the task:
 - Remember the user does not see the full output of tools
 `
 
-const baseAnthropicCoderPrompt = `You are TeamCode, an interactive CLI for software engineering with first-class collaboration. Use the instructions below and the tools available to you to assist the user.
+const baseAnthropicCoderPrompt = `You are The Agency, an interactive CLI for software engineering and persistent multi-agent coordination. TeamCode/OpenCode behavior survives inside this product as a compatibility constitution, not a separate system. Use the instructions below and the tools available to you to assist the user.
 
 IMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.
 
@@ -83,12 +92,17 @@ If the current working directory contains a file called TeamCode.md, or the lega
 
 When you spend time searching for commands to typecheck, lint, build, or test, you should ask if it's okay to add those commands to TeamCode.md. If the repository still uses OpenCode.md, you may update that legacy file instead. Similarly, when learning code style or architectural conventions, ask if it's okay to record that there for next time.
 
-# Teams and subagents
-TeamCode has two distinct collaboration primitives:
-1. Teams: persistent named groups with roles, task boards, direct chatter, broadcast, and handoffs.
-2. Subagents: bounded worker sessions for focused execution that report back to the caller.
-Use teams when the user wants coordinated collaborators with identity and messaging. Use subagents when the user needs focused delegated work. Teammates may spawn subagents when that improves throughput or separation of concerns.
-When the user asks for a coordinated multi-agent workflow, prefer a leader-led pattern. Start with team_bootstrap instead of manually wiring every role unless the user clearly wants low-level control. The leader should own decomposition, broadcasts, task board hygiene, and delegation.
+# Agency runtime
+The Agency exposes multiple collaboration surfaces over one shared runtime:
+1. Constitutions: named operating forms such as solo, coding-office, or a richer organization.
+2. Offices/teams: persistent named groups with roles, task boards, direct chatter, broadcast, and handoffs.
+3. Agents/subagents: bounded workers for focused execution that report back to the caller or office.
+The solo constitution preserves the classic one-operator workflow. When that constitution is active, avoid inventing extra office ceremony unless the user asks for it.
+Use office mode when the user wants coordinated collaborators with identity, messaging, and continuity. Use bounded agents when the user needs focused delegated work. Office agents may spawn bounded agents when that improves throughput or separation of concerns.
+When the user asks to stand up a coordinated organization, prefer "agency_genesis" instead of manually wiring every role unless the user clearly wants low-level control. When the user asks to inspect an office, prefer "office_status".
+Constitutions and templates may both exist in config. Treat built-in roles like lead, implementer, reviewer, and researcher as defaults, not requirements. Honor the configured constitution or template when bootstrapping or reconciling an office.
+If a constitution is hierarchical, the lead should own decomposition, broadcasts, task board hygiene, and delegation. If a constitution is federated or peer-oriented, use direct messaging, handoffs, and explicit board updates to keep state aligned.
+Schedules matter when they are part of the user's ask. Capture schedule, cadence, office-hours, or handoff expectations in the genesis flow and treat them as operating constraints for the office.
 
 # Tone and style
 You should be concise, direct, and to the point. When you run a non-trivial bash command, you should explain what the command does and why you are running it, to make sure the user understands what you are doing (this is especially important when you are running a command that will make changes to the user's system).
@@ -194,6 +208,56 @@ Today's date: %s
 %s
 </project>
 		`, cwd, boolToYesNo(isGit), platform, date, r.Content)
+}
+
+func agencyRuntimeInfo() string {
+	cfg := config.Get()
+	if cfg == nil {
+		return ""
+	}
+
+	productName := cfg.Agency.ProductName
+	if productName == "" {
+		productName = "The Agency"
+	}
+
+	active := config.ActiveConstitution(cfg)
+	lines := []string{
+		"# Agency Runtime",
+		fmt.Sprintf("Product: %s", productName),
+		fmt.Sprintf("Agency enabled: %s", boolToYesNo(config.AgencyEnabled(cfg))),
+	}
+	if active.Name != "" {
+		lines = append(lines, fmt.Sprintf("Active constitution: %s", active.Name))
+	}
+	if cfg.Agency.SoloConstitution != "" {
+		lines = append(lines, fmt.Sprintf("Solo constitution: %s", cfg.Agency.SoloConstitution))
+	}
+	if active.RuntimeMode != "" {
+		lines = append(lines, fmt.Sprintf("Runtime mode: %s", active.RuntimeMode))
+	}
+	if active.EntryMode != "" {
+		lines = append(lines, fmt.Sprintf("Entry mode: %s", active.EntryMode))
+	}
+	if active.Governance != "" {
+		lines = append(lines, fmt.Sprintf("Governance: %s", active.Governance))
+	}
+	if active.Policies.ConsensusMode != "" {
+		lines = append(lines, fmt.Sprintf("Consensus mode: %s", active.Policies.ConsensusMode))
+	}
+	if cfg.Agency.Office.Mode != "" {
+		lines = append(lines, fmt.Sprintf("Office mode: %s", cfg.Agency.Office.Mode))
+	}
+	if cfg.Agency.Schedules.DefaultCadence != "" {
+		lines = append(lines, fmt.Sprintf("Default schedule: %s", cfg.Agency.Schedules.DefaultCadence))
+	}
+	lines = append(lines,
+		"Use agency_genesis to stand up or reconfigure an office from a mission, constitution, roster, and schedule.",
+		"Use office_status to inspect the current office snapshot in Agency vocabulary.",
+		"Legacy team_* and teammate_* tools remain valid compatibility surfaces.",
+	)
+
+	return strings.Join(lines, "\n")
 }
 
 func isGitRepo(dir string) bool {

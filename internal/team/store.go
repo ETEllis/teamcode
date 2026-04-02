@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -134,4 +135,26 @@ func (s *store) writeInbox(teamName, agentName string, messages []InboxMessage) 
 	}
 	data = append(data, '\n')
 	return os.WriteFile(path, data, 0o644)
+}
+
+func (s *store) listTeamNames() ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entries, err := os.ReadDir(s.baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	teams := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			teams = append(teams, entry.Name())
+		}
+	}
+	sort.Strings(teams)
+	return teams, nil
 }

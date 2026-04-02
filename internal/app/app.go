@@ -31,6 +31,7 @@ type App struct {
 	Permissions permission.Service
 	Team        *team.Service
 	Workers     *orchestration.Manager
+	Agency      *AgencyService
 
 	CoderAgent agent.Service
 
@@ -57,6 +58,13 @@ func New(ctx context.Context, conn *sql.DB) (*App, error) {
 		Team:        team.NewService(),
 		Workers:     orchestration.NewManager(sessions),
 		LSPClients:  make(map[string]*lsp.Client),
+	}
+
+	if cfg := config.Get(); cfg != nil {
+		app.Agency = NewAgencyService(cfg)
+		if err := app.Agency.MaybeBootOnStartup(ctx); err != nil {
+			logging.Warn("Failed to auto-boot Agency office", "error", err)
+		}
 	}
 
 	// Initialize theme based on configuration

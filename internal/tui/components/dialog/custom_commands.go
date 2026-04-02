@@ -16,6 +16,7 @@ import (
 const (
 	UserCommandPrefix    = "user:"
 	ProjectCommandPrefix = "project:"
+	SkillCommandPrefix   = "skill:"
 )
 
 // namedArgPattern is a regex pattern to find named arguments in the format $NAME
@@ -93,7 +94,88 @@ func LoadCustomCommands() ([]Command, error) {
 		appendCommands(projectCommands)
 	}
 
+	skillCommands, err := loadSkillCommands()
+	if err != nil {
+		fmt.Printf("Warning: failed to load skills: %v\n", err)
+	} else {
+		appendCommands(skillCommands)
+	}
+
 	return commands, nil
+}
+
+func loadSkillCommands() ([]Command, error) {
+	roots, err := skillRoots()
+	if err != nil {
+		return nil, err
+	}
+
+	var commands []Command
+	seen := map[string]bool{}
+	for _, root := range roots {
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() || info.Name() != "SKILL.md" {
+				return nil
+			}
+
+			skillDir := filepath.Dir(path)
+			skillName := filepath.Base(skillDir)
+			if seen[skillName] {
+				return nil
+			}
+			seen[skillName] = true
+
+			content := fmt.Sprintf("Use the skill defined at %s for this task. Read the skill first, then help with:\n$TASK", path)
+			commands = append(commands, Command{
+				ID:          SkillCommandPrefix + skillName,
+				Title:       SkillCommandPrefix + skillName,
+				Description: fmt.Sprintf("Installed skill from %s", path),
+				Handler: func(cmd Command) tea.Cmd {
+					return util.CmdHandler(ShowMultiArgumentsDialogMsg{
+						CommandID: cmd.ID,
+						Content:   content,
+						ArgNames:  []string{"TASK"},
+					})
+				},
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return commands, nil
+}
+
+func skillRoots() ([]string, error) {
+	var roots []string
+	seen := map[string]bool{}
+	appendRoot := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			return
+		}
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			seen[path] = true
+			roots = append(roots, path)
+		}
+	}
+
+	if codexHome := os.Getenv("CODEX_HOME"); codexHome != "" {
+		appendRoot(filepath.Join(codexHome, "skills"))
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	appendRoot(filepath.Join(home, ".codex", "skills"))
+	appendRoot(filepath.Join(home, ".agents", "skills"))
+	return roots, nil
 }
 
 // loadCommandsFromDir loads commands from a specific directory with the given prefix

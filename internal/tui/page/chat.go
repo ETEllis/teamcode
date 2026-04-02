@@ -3,19 +3,23 @@ package page
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
+	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/ETEllis/teamcode/internal/agency"
 	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/completions"
+	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/message"
 	"github.com/ETEllis/teamcode/internal/session"
 	"github.com/ETEllis/teamcode/internal/tui/components/chat"
 	"github.com/ETEllis/teamcode/internal/tui/components/dialog"
 	"github.com/ETEllis/teamcode/internal/tui/layout"
 	"github.com/ETEllis/teamcode/internal/tui/util"
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var ChatPage PageID = "chat"
@@ -28,6 +32,10 @@ type chatPage struct {
 	session              session.Session
 	completionDialog     dialog.CompletionDialog
 	showCompletionDialog bool
+	broadcastCh <-chan app.BroadcastMsg
+	bulletinCh  <-chan app.BulletinRecord
+	approval    *chat.ApprovalCmp
+	orgID       string
 }
 
 type ChatKeyMap struct {
@@ -56,12 +64,103 @@ func (p *chatPage) Init() tea.Cmd {
 		p.layout.Init(),
 		p.completionDialog.Init(),
 	}
+	if p.app.Agency != nil {
+		org, _ := p.app.Agency.InspectOrganization()
+		if org.Constitution.Name != "" || org.CurrentConstitution != "" {
+			orgID := org.CurrentConstitution
+			if orgID == "" {
+				orgID = org.Constitution.Name
+			}
+			p.orgID = orgID
+			ch, _ := p.app.Agency.SubscribeBroadcasts(context.Background(), orgID)
+			if ch != nil {
+				p.broadcastCh = ch
+				cmds = append(cmds, p.waitForBroadcast())
+			}
+			// Init approval panel.
+			p.approval = chat.NewApprovalCmp(p.app, orgID)
+			if initCmd := p.approval.Init(); initCmd != nil {
+				cmds = append(cmds, initCmd)
+			}
+			// Subscribe to bulletin channel.
+			bch, _ := p.app.Agency.SubscribeBulletin(context.Background(), orgID)
+			if bch != nil {
+				p.bulletinCh = bch
+				cmds = append(cmds, p.waitForBulletin())
+			}
+		}
+	}
 	return tea.Batch(cmds...)
+}
+
+func (p *chatPage) waitForBroadcast() tea.Cmd {
+	return func() tea.Msg {
+		b, ok := <-p.broadcastCh
+		if !ok {
+			return nil
+		}
+		return chat.AgencyBroadcastMsg{BroadcastMsg: b}
+	}
+}
+
+func (p *chatPage) waitForBulletin() tea.Cmd {
+	return func() tea.Msg {
+		b, ok := <-p.bulletinCh
+		if !ok {
+			return nil
+		}
+		return chat.AgencyBulletinMsg{BulletinRecord: b}
+	}
 }
 
 func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
+	case chat.AgencyBroadcastMsg:
+		// Forward to messages component and re-queue the next wait.
+		u, cmd := p.messages.Update(msg)
+		p.messages = u.(layout.Container)
+		cmds = append(cmds, cmd)
+		if p.broadcastCh != nil {
+			cmds = append(cmds, p.waitForBroadcast())
+		}
+		// Fire-and-forget TTS in background.
+		go p.playTTS(msg.Message, msg.ActorID)
+		return p, tea.Batch(cmds...)
+
+	case chat.AgencyBulletinMsg:
+		u, cmd := p.messages.Update(msg)
+		p.messages = u.(layout.Container)
+		cmds = append(cmds, cmd)
+		if p.bulletinCh != nil {
+			cmds = append(cmds, p.waitForBulletin())
+		}
+		return p, tea.Batch(cmds...)
+
+	case chat.ApprovalProposalMsg:
+		if p.approval != nil {
+			u, cmd := p.approval.Update(msg)
+			p.approval = u.(*chat.ApprovalCmp)
+			cmds = append(cmds, cmd)
+			// Show approval panel in right rail when there are pending items.
+			if p.approval.HasPendingApprovals() {
+				approvalContainer := layout.NewContainer(p.approval, layout.WithPadding(1, 1, 1, 1))
+				cmds = append(cmds, tea.Batch(p.layout.SetRightPanel(approvalContainer), approvalContainer.Init()))
+			}
+		}
+		return p, tea.Batch(cmds...)
+
+	case chat.ApprovalVotedMsg:
+		if p.approval != nil {
+			u, cmd := p.approval.Update(msg)
+			p.approval = u.(*chat.ApprovalCmp)
+			cmds = append(cmds, cmd)
+			// Clear approval panel when queue is empty.
+			if !p.approval.HasPendingApprovals() {
+				cmds = append(cmds, p.clearSidebar())
+			}
+		}
+		return p, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		cmd := p.layout.SetSize(msg.Width, msg.Height)
 		cmds = append(cmds, cmd)
@@ -94,13 +193,15 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, cmd
 		}
 	case chat.SessionSelectedMsg:
-		if p.session.ID == "" {
-			cmd := p.setSidebar()
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
 		p.session = msg
+	case chat.SplashModeChangedMsg:
+		if msg.Active {
+			return p, p.clearSidebar()
+		}
+		if p.session.ID != "" {
+			return p, p.setSidebar()
+		}
+		return p, nil
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keyMap.ShowCompletionDialog):
@@ -143,7 +244,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (p *chatPage) setSidebar() tea.Cmd {
 	sidebarContainer := layout.NewContainer(
-		chat.NewSidebarCmp(p.session, p.app.History),
+		chat.NewSidebarCmp(p.session, p.app.History, p.app.Agency, p.app.Team, p.app.Workers),
 		layout.WithPadding(1, 1, 1, 1),
 	)
 	return tea.Batch(p.layout.SetRightPanel(sidebarContainer), sidebarContainer.Init())
@@ -170,10 +271,6 @@ func (p *chatPage) sendMessage(text string, attachments []message.Attachment) te
 		}
 
 		p.session = session
-		cmd := p.setSidebar()
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 		cmds = append(cmds, util.CmdHandler(chat.SessionSelectedMsg(session)))
 	}
 
@@ -189,14 +286,89 @@ func (p *chatPage) resolveSlashCommand(text string) tea.Cmd {
 		return nil
 	}
 
-	commandName := strings.TrimPrefix(text, "/")
-	if commandName == "" {
+	commandText := strings.TrimSpace(strings.TrimPrefix(text, "/"))
+	if commandText == "" {
 		return util.CmdHandler(dialog.ShowCommandDialogMsg{})
 	}
+	parts := strings.Fields(commandText)
+	commandName := parts[0]
 
 	switch commandName {
+	case "commands":
+		return util.CmdHandler(dialog.ShowCommandDialogMsg{})
+	case "sessions":
+		return util.CmdHandler(dialog.ShowSessionDialogMsg{})
+	case "new":
+		p.session = session.Session{}
+		return tea.Batch(
+			p.clearSidebar(),
+			util.CmdHandler(chat.SessionClearedMsg{}),
+		)
 	case "init":
 		return util.CmdHandler(chat.SendMsg{Text: dialog.InitProjectPrompt()})
+	case "models":
+		return util.CmdHandler(dialog.ShowModelDialogMsg{})
+	case "model":
+		return util.CmdHandler(dialog.ShowModelDialogMsg{})
+	case "theme":
+		return util.CmdHandler(dialog.ShowThemeDialogMsg{})
+	case "compact":
+		return util.CmdHandler(dialog.StartCompactSessionMsg{})
+	case "skills":
+		return util.CmdHandler(chat.SendMsg{Text: dialog.ListSkillsPrompt()})
+	case "skill":
+		if len(parts) == 1 {
+			return util.CmdHandler(chat.SendMsg{Text: dialog.ListSkillsPrompt()})
+		}
+		task := ""
+		if len(parts) > 2 {
+			task = strings.Join(parts[2:], " ")
+		}
+		return util.CmdHandler(chat.SendMsg{Text: dialog.SkillUsePrompt(parts[1], task)})
+	case "help":
+		return util.CmdHandler(dialog.ShowHelpDialogMsg{})
+	case "exit":
+		return util.CmdHandler(dialog.ShowQuitDialogMsg{})
+	case "team":
+		if len(parts) == 1 {
+			return util.CmdHandler(chat.SendMsg{Text: dialog.TeamStatusPrompt()})
+		}
+		switch parts[1] {
+		case "status":
+			return util.CmdHandler(chat.SendMsg{Text: dialog.TeamStatusPrompt()})
+		case "bootstrap":
+			templateName := ""
+			if len(parts) > 2 {
+				templateName = strings.Join(parts[2:], " ")
+			}
+			return util.CmdHandler(chat.SendMsg{Text: dialog.TeamBootstrapPrompt(templateName)})
+		case "templates":
+			return util.CmdHandler(chat.SendMsg{Text: dialog.TeamTemplatesPrompt()})
+		}
+	case "agency":
+		if len(parts) == 1 {
+			return util.CmdHandler(dialog.ShowAgencyDialogMsg{})
+		}
+		switch parts[1] {
+		case "status":
+			return util.CmdHandler(dialog.ShowAgencyDialogMsg{})
+		case "genesis":
+			intent := ""
+			if len(parts) > 2 {
+				intent = strings.Join(parts[2:], " ")
+			}
+			return util.CmdHandler(dialog.StartAgencyGenesisMsg{Intent: intent})
+		case "bootstrap":
+			constitutionName := ""
+			if len(parts) > 2 {
+				constitutionName = strings.Join(parts[2:], " ")
+			}
+			return util.CmdHandler(dialog.BootAgencyOfficeMsg{Constitution: constitutionName})
+		case "stop":
+			return util.CmdHandler(dialog.StopAgencyOfficeMsg{})
+		case "templates", "blueprints", "constitutions":
+			return util.CmdHandler(dialog.ShowAgencyDialogMsg{})
+		}
 	}
 
 	commands, err := dialog.LoadCustomCommands()
@@ -250,6 +422,32 @@ func (p *chatPage) BindingKeys() []key.Binding {
 	bindings = append(bindings, p.messages.BindingKeys()...)
 	bindings = append(bindings, p.editor.BindingKeys()...)
 	return bindings
+}
+
+// playTTS fires TTS for an agent broadcast message. Called in a goroutine — never blocks TUI.
+func (p *chatPage) playTTS(text, actorID string) {
+	if text == "" {
+		return
+	}
+	baseDir := config.WorkingDirectory()
+	cmd, args, ok := agency.PlatformTTSCommand(baseDir)
+	if !ok {
+		return
+	}
+
+	// Replace placeholders. Voice is resolved from actor role suffix.
+	voiceID := agency.VoiceIDForRole(actorID)
+	finalArgs := make([]string, len(args))
+	for i, a := range args {
+		a = strings.ReplaceAll(a, "{voice}", voiceID)
+		a = strings.ReplaceAll(a, "{text}", text)
+		// For {output} use a temp path derived from timestamp.
+		a = strings.ReplaceAll(a, "{output}", fmt.Sprintf("/tmp/agency-tts-%d.wav", time.Now().UnixMilli()))
+		finalArgs[i] = a
+	}
+
+	c := exec.Command(cmd, finalArgs...)
+	_ = c.Run() // fire and forget; errors are silently ignored
 }
 
 func NewChatPage(app *app.App) tea.Model {
