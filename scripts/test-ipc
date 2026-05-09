@@ -181,6 +181,7 @@ for _ in $(seq 1 40); do
 done
 exec 3>&-
 kill $NC_PID 2>/dev/null || true
+wait "$NC_PID" 2>/dev/null || true
 
 echo ""
 echo "=== Messages received ==="

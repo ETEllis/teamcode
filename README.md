@@ -10,12 +10,20 @@
 /_/   \_\____|_____|_| \_|\____| |_|
 ```
 
-Agency is a terminal-first AI working organization. Staff a persistent office of autonomous agents, each with a distinct role and optional local voice, then let that office wake on schedules, reason through work, route to the right model, and write every consequential step to a shared ledger.
+Meet Agency. It is not just another tool; it is your intent, multiplied. Whether you are spinning up a new app, running a business, or trying to keep life from sliding into chaos, Agency gives your ambitions an operational extension.
 
-It is built for developers who want more than a chatbot tab: live daemons, a TUI command center, provider routing, approvals, durable evidence, and a local-first runtime you can inspect end to end.
+Inside Agency, work is handled by a configurable team with roles, presence, scheduled wakes, provider routing, approvals, bulletin updates, and a ledgered history. One-off projects, long-running operations, app builds, business workflows, life admin: one command line, one interface, and suddenly you are not alone.
+
+It is built for developers who want more than a chatbot tab: a local command center for autonomous work as an organization, not a prompt.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ETEllis/agency/main/install | bash
+```
+
+See the local office breathe in under a minute:
+
+```bash
+scripts/demo-local-office
 ```
 
 ### What You Get
@@ -25,6 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/ETEllis/agency/main/install | bash
 - Provider routing across Codex, Anthropic, OpenAI, Gemini, and Ollama.
 - Human approval lanes for proposed actions.
 - A bulletin board and append-only ledger for auditability.
+- A 30-second demo loop that shows wake, routing, bulletin, approval, and ledger transcript flow without API keys.
 - A clear V1 terminal release with voice, desktop, Docker, and remote-client work staged as the next product layers.
 
 ### Why Agency
@@ -65,6 +74,12 @@ For targeted reruns, use `scripts/release-smoke --live` or
 `scripts/release-smoke --with-overmind --skip-static`.
 
 The tracked release audit is [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
+For a quick guided proof, read [docs/DEMO.md](docs/DEMO.md) or run:
+
+```bash
+scripts/demo-local-office
+```
 
 ### Brand
 
@@ -155,6 +170,7 @@ available, or when Homebrew/Linuxbrew is installed.
 | `internal/agency/` | Core office runtime: schedules, agents, bus, routing, ledger, IPC |
 | `internal/tui/` | Terminal command-center UI, splash, approval lane, and themes |
 | `scripts/` | Setup, daemon build, smoke tests, live proof, and verifier scripts |
+| `docs/DEMO.md` | Guided local demo path for cold visitors |
 | `Procfile` | Local Redis + office + runtime + scheduler + IPC process graph |
 | `Dockerfile.agency`, `docker-compose.agency.yml` | Optional packaging path, not required for the default local install |
 | `AGENCY_BLUEPRINT.md` | Architecture reference |

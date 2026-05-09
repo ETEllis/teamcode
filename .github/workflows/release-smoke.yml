@@ -1,0 +1,39 @@
+name: release-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  static-and-ipc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server redis-tools netcat-openbsd
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Static release smoke
+        run: scripts/release-smoke
+
+      - name: Redis IPC live smoke
+        run: scripts/release-smoke --live --skip-static

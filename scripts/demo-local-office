@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Agency guided local demo.
+#
+# Shows a fast, API-key-free proof loop using the real Redis-backed IPC path
+# plus a mock provider result and a visible demo ledger transcript.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+ORG="demo-office-$$"
+BASE="$REPO_ROOT/.tmp/demo-local-office"
+LEDGER="$BASE/ledger.jsonl"
+STARTED_REDIS=false
+
+cleanup() {
+  if $STARTED_REDIS; then
+    kill "${REDIS_PID:-0}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+say_step() {
+  printf "\n[%s] %s\n" "$1" "$2"
+}
+
+print_wordmark() {
+  printf '%s\n' '    _    ____ _____ _   _  ______   __'
+  printf '%s\n' '   / \  / ___| ____| \ | |/ ___\ \ / /'
+  printf '%s\n' '  / _ \| |  _|  _| |  \| | |    \ V /'
+  printf '%s\n' ' / ___ \ |_| | |___| |\  | |___  | |'
+  printf '%s\n' '/_/   \_\____|_____|_| \_|\____| |_|'
+}
+
+print_wordmark
+printf '\nAgency local office demo\n'
+printf 'Org: %s\n' "$ORG"
+
+need go
+need redis-server
+need redis-cli
+need nc
+
+rm -rf "$BASE"
+mkdir -p "$BASE"
+
+say_step 1 "Create a tiny office"
+cat > "$BASE/office.json" <<EOF
+{
+  "organizationId": "$ORG",
+  "roles": ["builder", "operator"],
+  "runtime": "local Redis + IPC",
+  "provider": "mock-provider"
+}
+EOF
+cat "$BASE/office.json"
+
+say_step 2 "Ensure Redis is available"
+if redis-cli ping >/dev/null 2>&1; then
+  echo "Redis already reachable"
+else
+  redis-server --save "" --appendonly no --loglevel warning > "$BASE/redis.log" 2>&1 &
+  REDIS_PID=$!
+  STARTED_REDIS=true
+  for _ in $(seq 1 20); do
+    redis-cli ping >/dev/null 2>&1 && break
+    sleep 0.25
+  done
+  redis-cli ping >/dev/null 2>&1 || {
+    echo "Redis did not become reachable" >&2
+    echo "Redis log: $BASE/redis.log" >&2
+    exit 1
+  }
+  echo "Started temporary Redis (log: $BASE/redis.log)"
+fi
+
+say_step 3 "Run the real IPC proof with broadcast, approval, and bulletin events"
+scripts/test-ipc --org "$ORG" --base "$BASE"
+
+say_step 4 "Write the demo ledger transcript"
+TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+cat > "$LEDGER" <<EOF
+{"time":"$TS","org":"$ORG","source":"demo","kind":"wake","message":"Build a tiny local office demo"}
+{"time":"$TS","org":"$ORG","source":"mock-router","kind":"route","provider":"mock-provider","model":"demo-local"}
+{"time":"$TS","org":"$ORG","source":"approval-lane","kind":"approval","proposalId":"prop-smoke-1","action":"ActionBroadcast"}
+{"time":"$TS","org":"$ORG","source":"bulletin","kind":"result","score":0.90,"message":"test output ok"}
+EOF
+cat "$LEDGER"
+
+say_step 5 "What just happened"
+cat <<EOF
+WakeSignal -> mock route -> bulletin update -> approval lane -> ledger transcript
+
+This fast demo uses the real Redis/IPC transport and a mock provider result so
+you can see the product loop without API keys. For the full V1 proof, run:
+
+  scripts/live-release-proof --log-dir .tmp/release-proof
+EOF

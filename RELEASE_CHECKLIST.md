@@ -34,6 +34,8 @@ requirements.
 | Local planning traces are not public by accident | Done | `.gitignore` excludes `.omx/` and root planning scratch files |
 | Brand direction is explicit | Done | `BRAND.md`, README palette, setup wordmark, and splash wordmark define the public terminal face |
 | One-command install is public | Done | Top-level `install` bootstraps dependencies, clones Agency, runs setup, and links `agency` into `~/.agency/bin` |
+| Demo path is public | Done | `docs/DEMO.md` and `scripts/demo-local-office` show the local office loop without API keys |
+| CI smoke path is public | Done | `.github/workflows/release-smoke.yml` runs static release smoke plus Redis IPC live smoke |
 
 ## Verified Gates
 
@@ -61,6 +63,7 @@ requirements.
 | Public staging hygiene | `git status --short` | Internal traces should remain ignored; stage release files intentionally rather than using blind `git add .` |
 | Brand polish | README, `BRAND.md`, setup banner, TUI splash | Wordmark and palette are present |
 | Installer syntax | `bash -n install`; `./install --help` | Passed; installer exposes documented flags and parses cleanly |
+| Local office demo | `scripts/demo-local-office` | Passed; shows office creation, Redis/IPC broadcast, approval, bulletin, and demo ledger transcript |
 
 ## Terminal Live Proof
 
