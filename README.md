@@ -3,11 +3,11 @@
 **Your intent, multiplied.**
 
 ```txt
-    ___    ______ ______ _   __ ______ __  __
-   /   |  / ____// ____// | / // ____// / / /
-  / /| | / / __ / __/  /  |/ // /    / /_/ /
- / ___ |/ /_/ // /___ / /|  // /___ / __  /
-/_/  |_|\____//_____//_/ |_/ \____//_/ /_/
+    _    ____ _____ _   _  ______   __
+   / \  / ___| ____| \ | |/ ___\ \ / /
+  / _ \| |  _|  _| |  \| | |    \ V /
+ / ___ \ |_| | |___| |\  | |___  | |
+/_/   \_\____|_____|_| \_|\____| |_|
 ```
 
 Agency is a terminal-first AI working organization. Staff a persistent office of autonomous agents, each with a distinct role and optional local voice, then let that office wake on schedules, reason through work, route to the right model, and write every consequential step to a shared ledger.
@@ -141,6 +141,20 @@ curl -fsSL https://raw.githubusercontent.com/ETEllis/agency/main/install | bash 
 The installer uses `~/.agency` by default. Override with `AGENCY_INSTALL_DIR`.
 Linux is supported when `git`, `go`, `redis-server`, and `overmind` are already
 available, or when Homebrew/Linuxbrew is installed.
+
+### Repository Contents
+
+| Path | What it is |
+|------|------------|
+| `cmd/` | CLI commands, runtime commands, and schema generation |
+| `internal/agency/` | Core office runtime: schedules, agents, bus, routing, ledger, IPC |
+| `internal/tui/` | Terminal command-center UI, splash, approval lane, and themes |
+| `scripts/` | Setup, daemon build, smoke tests, live proof, and verifier scripts |
+| `Procfile` | Local Redis + office + runtime + scheduler + IPC process graph |
+| `Dockerfile.agency`, `docker-compose.agency.yml` | Optional packaging path, not required for the default local install |
+| `AGENCY_BLUEPRINT.md` | Architecture reference |
+| `RELEASE_CHECKLIST.md` | Public release gates and evidence trail |
+| `CONTRIBUTING.md`, `SECURITY.md` | Public contribution and vulnerability reporting guidance |
 
 ### Prerequisites
 
@@ -306,6 +320,31 @@ The public terminal path is local Redis + Overmind + daemons. Docker Compose rem
 
 ### WebSocket Transport
 Remote client event stream — same schema as IPC, enabling web dashboard and mobile companion.
+
+---
+
+## Contributing
+
+Agency is early but intentionally public. Good first contributions are provider adapters, release-smoke hardening, TUI polish, docs, and runtime tests. Before opening changes, run:
+
+```bash
+go test ./...
+scripts/release-smoke
+```
+
+For changes touching Redis, Overmind, IPC, or daemon orchestration, also run:
+
+```bash
+scripts/live-release-proof --log-dir .tmp/release-proof
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the public contribution path.
+
+## Security
+
+Do not commit `.env`, `.codex`, local proof logs, generated binaries, or agent scratch state. The repo ignores those paths by default. Codex execution uses a read-only sandbox unless `AGENCY_CODEX_UNSANDBOXED=true` is explicitly set.
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ---
 

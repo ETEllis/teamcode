@@ -5,11 +5,11 @@ Agency should feel like a working command center: quiet enough to live in all da
 ## Wordmark
 
 ```txt
-    ___    ______ ______ _   __ ______ __  __
-   /   |  / ____// ____// | / // ____// / / /
-  / /| | / / __ / __/  /  |/ // /    / /_/ /
- / ___ |/ /_/ // /___ / /|  // /___ / __  /
-/_/  |_|\____//_____//_/ |_/ \____//_/ /_/
+    _    ____ _____ _   _  ______   __
+   / \  / ___| ____| \ | |/ ___\ \ / /
+  / _ \| |  _|  _| |  \| | |    \ V /
+ / ___ \ |_| | |___| |\  | |___  | |
+/_/   \_\____|_____|_| \_|\____| |_|
 ```
 
 Use the wordmark in terminal surfaces, setup scripts, release notes, and screenshot frames. Keep it monochrome or signal-gold; do not add gradients to terminal output.

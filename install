@@ -33,6 +33,14 @@ warn() { printf "  ${YELLOW}WARN${RESET} %s\n" "$*"; }
 fail() { printf "  ${RED}ERR${RESET} %s\n" "$*" >&2; exit 1; }
 hdr() { printf "\n${BOLD}%s${RESET}\n" "$*"; }
 
+print_wordmark() {
+  printf "${BOLD}%s${RESET}\n" '    _    ____ _____ _   _  ______   __'
+  printf "${BOLD}%s${RESET}\n" '   / \  / ___| ____| \ | |/ ___\ \ / /'
+  printf "${BOLD}%s${RESET}\n" '  / _ \| |  _|  _| |  \| | |    \ V /'
+  printf "${BOLD}%s${RESET}\n" ' / ___ \ |_| | |___| |\  | |___  | |'
+  printf "${BOLD}%s${RESET}\n" '/_/   \_\____|_____|_| \_|\____| |_|'
+}
+
 usage() {
   cat <<EOF
 Usage: install [options]
@@ -286,7 +294,9 @@ finish() {
   fi
 }
 
-printf "\n${BOLD}Agency installer${RESET}\n"
+printf "\n"
+print_wordmark
+printf "${DIM}Agency installer${RESET}\n"
 printf "${DIM}Repository: %s${RESET}\n" "$REPO_URL"
 printf "${DIM}Install root: %s${RESET}\n" "$INSTALL_ROOT"
 

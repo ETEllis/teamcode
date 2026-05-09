@@ -44,11 +44,11 @@ func splashCommands(overview AgencyOverview) []splashCommand {
 
 func splashWordmark() string {
 	return strings.Join([]string{
-		"    ___    ______ ______ _   __ ______ __  __",
-		"   /   |  / ____// ____// | / // ____// / / /",
-		"  / /| | / / __ / __/  /  |/ // /    / /_/ / ",
-		" / ___ |/ /_/ // /___ / /|  // /___ / __  /  ",
-		"/_/  |_|\\____//_____//_/ |_/ \\____//_/ /_/   ",
+		"    _    ____ _____ _   _  ______   __",
+		"   / \\  / ___| ____| \\ | |/ ___\\ \\ / /",
+		"  / _ \\| |  _|  _| |  \\| | |    \\ V /",
+		" / ___ \\ |_| | |___| |\\  | |___  | |",
+		"/_/   \\_\\____|_____|_| \\_|\\____| |_|",
 	}, "\n")
 }
 
@@ -282,7 +282,7 @@ func renderSplash(appState *app.App, activeSession session.Session, width, heigh
 		width,
 		max(0, height),
 		lipgloss.Center,
-		lipgloss.Center,
+		lipgloss.Top,
 		content,
 		lipgloss.WithWhitespaceBackground(t.Background()),
 	)
