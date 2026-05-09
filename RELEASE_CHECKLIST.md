@@ -4,14 +4,15 @@ Last updated: 2026-05-09
 
 ## Release Objective
 
-Ship the terminal/runtime Agency release without blocking on custom voice,
-Docker packaging, or desktop completion.
+Ship Agency V1 as the terminal-first local office. Voice, desktop, Docker parity,
+and remote clients are framed as V2/V3 product layers rather than missing V1
+requirements.
 
 ## Prompt-to-Artifact Audit
 
 | User requirement | Artifact / command | Evidence | Status |
 |------------------|--------------------|----------|--------|
-| Stop voice research from blocking ship | README voice section, `scripts/install-voice`, macOS `say` fallback | Voice is documented as optional; Kokoro remains installable for later quality upgrade | Done |
+| Frame voice correctly for V1/V2 | README V1 status, voice section, `scripts/install-voice`, macOS `say` fallback | Voice is documented as V1 optional fallback and V2 product-quality layer | Done |
 | Do every release piece possible except custom voice | `scripts/release-smoke`, `scripts/live-release-proof`, `scripts/verify-release-proof`, docs | Static gates, proof wrapper, verifier, public docs, and checklist are in place | Done |
 | Avoid Docker as default runtime tax | `internal/config/agency.go`, `./agency agency services --json`, README | Runtime config reports `docker.enabled=false`; Docker Compose is optional packaging only | Done |
 | Preserve system architecture without Docker | `Procfile`, `scripts/build-daemons`, `scripts/release-smoke --with-overmind`, IPC smoke | Local Redis + Overmind + daemons + IPC path is canonical and repeatable | Done |
@@ -23,10 +24,10 @@ Docker packaging, or desktop completion.
 
 | Decision | Status | Evidence |
 |----------|--------|----------|
-| Voice is non-blocking | Done | README marks voice optional and documents macOS `say` fallback plus optional Kokoro install |
-| Docker is non-blocking | Done | `./agency agency services --json` reports `docker.enabled=false`; README says Docker Compose is optional |
+| Voice is V1 optional / V2 product layer | Done | README marks voice as V1 optional fallback and V2 product-quality layer |
+| Docker is V1 optional / V2 parity layer | Done | `./agency agency services --json` reports `docker.enabled=false`; README says Docker Compose is optional and V2 hardening/parity |
 | Local runtime is canonical | Done | `Procfile`, `scripts/build-daemons`, and `scripts/release-smoke` define Redis + Overmind + daemons |
-| Desktop is next lane | Done | README and HANDOFF mark macOS desktop as in progress, not required for first terminal release |
+| Desktop is V2 companion surface | Done | README roadmap frames macOS desktop as V2 companion app |
 | Unsafe Codex mode is not default | Done | Codex adapters use read-only sandbox by default; unsafe mode requires `AGENCY_CODEX_UNSANDBOXED=true` |
 | Upstream attribution is preserved | Done | `LICENSE` retains upstream MIT notice; `NOTICE.md` documents Agency lineage and maintainer attribution |
 | Generated artifacts are ignored | Done | `.gitignore` excludes local binary, `.tmp`, `dist`, and SwiftPM `.build` output |
@@ -98,5 +99,7 @@ scripts/live-release-proof --log-dir .tmp/release-proof
 
 ## Completion Verdict
 
-Complete for the terminal-first release path. Voice remains optional, Docker
-remains optional packaging, and the Swift desktop remains the next lane.
+Complete for Agency V1: the terminal-first local office. Voice remains a V1
+optional fallback and V2 product-quality layer, Docker remains optional V1
+packaging with V2 parity hardening, and the Swift desktop is the V2 companion
+surface.

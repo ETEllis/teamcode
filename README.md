@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/ETEllis/agency/main/install | bash
 - Provider routing across Codex, Anthropic, OpenAI, Gemini, and Ollama.
 - Human approval lanes for proposed actions.
 - A bulletin board and append-only ledger for auditability.
-- Optional voice, optional Docker packaging, and a macOS desktop companion in progress.
+- A clear V1 terminal release with voice, desktop, Docker, and remote-client work staged as the next product layers.
 
 ### Why Agency
 
@@ -33,21 +33,26 @@ Agency treats autonomous work as an organization, not a prompt. Schedules create
 
 ---
 
-## What's Built
+## V1 Release
 
-The core terminal runtime is present in this repo and is the first release target.
-Voice, Docker, and the macOS desktop app are intentionally non-blocking for the
-first public push.
+Agency V1 is the terminal-first local office: CLI/TUI, Redis + Overmind runtime,
+agent daemons, provider routing, approvals, bulletin updates, ledger state, IPC,
+one-command install, and release proof. It is the public starting point, not a
+demo branch.
 
-### Status
+### V1 Status
 
 | Area | Status |
 |------|--------|
-| Terminal CLI/TUI | Release candidate |
-| Local runtime | Redis + Overmind + daemons, verified by `scripts/live-release-proof` |
-| Voice | Optional; macOS `say` fallback, Kokoro install path available |
-| Docker Compose | Optional/experimental packaging path |
-| macOS desktop | In progress |
+| Terminal CLI/TUI | V1 shipped |
+| Local runtime | V1 shipped: Redis + Overmind + office/runtime/scheduler/actor/IPC daemons |
+| Provider routing | V1 shipped: Codex, Anthropic, OpenAI, Gemini, Ollama |
+| Approvals, bulletin, ledger | V1 shipped |
+| Installer and release proof | V1 shipped and verified by `scripts/live-release-proof` |
+| Voice | V1 optional fallback; V2 product-quality voice layer |
+| Docker Compose | V1 optional packaging; V2 hardening/parity path |
+| macOS desktop | V2 companion app |
+| Remote clients / web dashboard | V3 expansion path |
 
 For release evidence, rerun the live local-process gates from a normal Terminal
 session to create a fresh proof bundle:
@@ -165,9 +170,11 @@ available, or when Homebrew/Linuxbrew is installed.
 - Codex CLI authenticated with `codex login`, an API key for at least one hosted provider (Anthropic, OpenAI, Gemini), **or** Ollama running locally
 - Docker is not required for the default terminal release path
 
-### Voice (optional)
+### Voice In V1
 
-Agency can ship and run without a custom voice model. On macOS it can use the built-in `say` command as the lightweight fallback. Install Kokoro only when you want better local TTS:
+Voice is intentionally optional in V1. Agency can run completely without a
+custom voice model, and on macOS it can use the built-in `say` command as the
+lightweight fallback. Install Kokoro only when you want better local TTS:
 
 ```bash
 scripts/install-voice
@@ -307,19 +314,21 @@ Legacy `.teamcode.json` / `.opencode.json` config files are still read as fallba
 
 ---
 
-## What's Next
+## Roadmap
 
-### IPC Transport
-Unix socket server exposing the live office event stream to local clients (desktop app, CLI tools). Same `WakeSignal` / `LedgerEntry` schema as Redis but over a local socket.
+### V2 — Companion Surfaces
 
-### macOS Desktop App (in progress)
-Native SwiftUI companion. Real-time office view: iMessage bubbles, bulletin board, approval lanes, agent status. Connects to the Go runtime via IPC socket. macOS-first, iPad companion after.
+- Product-quality voice: stronger local TTS/STT defaults, voice selection, and better first-run checks.
+- macOS desktop companion: native SwiftUI office view with bubbles, bulletin board, approvals, and agent status.
+- IPC hardening: richer local-client protocol for desktop and CLI companion tools.
+- Docker parity: optional Compose packaging hardened for users who prefer containerized local runtime.
 
-### Docker Compose (optional)
-The public terminal path is local Redis + Overmind + daemons. Docker Compose remains an experimental packaging/parity path and is not required to run Agency.
+### V3 — Networked Office
 
-### WebSocket Transport
-Remote client event stream — same schema as IPC, enabling web dashboard and mobile companion.
+- WebSocket transport for remote event streams.
+- Web dashboard and mobile companion views.
+- Multi-machine office coordination.
+- Deeper policy, credential, and permission surfaces for long-running organizations.
 
 ---
 
