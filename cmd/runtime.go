@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,8 +129,21 @@ func bootstrapVoiceGateway(cfg *config.Config) (*agencyrt.VoiceGateway, error) {
 		})
 	}
 
+	voiceEnabled := boolValue(cfg.Agency.Voice.Enabled)
+	ttsEnabled := boolValue(cfg.Agency.Voice.TTS.Enabled)
+	ttsCommand := cfg.Agency.Voice.TTS.Command
+	ttsArgs := append([]string(nil), cfg.Agency.Voice.TTS.Args...)
+	if strings.TrimSpace(ttsCommand) == "" {
+		if cmd, args, ok := agencyrt.PlatformTTSCommand(config.WorkingDirectory()); ok {
+			ttsCommand = cmd
+			ttsArgs = append([]string(nil), args...)
+			ttsEnabled = true
+			voiceEnabled = true
+		}
+	}
+
 	return agencyrt.NewVoiceGateway(agencyrt.VoiceGatewayConfig{
-		Enabled:              boolValue(cfg.Agency.Voice.Enabled),
+		Enabled:              voiceEnabled,
 		Provider:             cfg.Agency.Voice.Provider,
 		StatePath:            cfg.Agency.Voice.GatewayState,
 		AssetDir:             cfg.Agency.Voice.AssetDir,
@@ -155,9 +169,9 @@ func bootstrapVoiceGateway(cfg *config.Config) (*agencyrt.VoiceGateway, error) {
 			Timeout:     parseAgencyDuration(cfg.Agency.Voice.STT.Timeout),
 		},
 		TTS: agencyrt.SpeechRuntimeConfig{
-			Enabled:     boolValue(cfg.Agency.Voice.TTS.Enabled),
-			Command:     cfg.Agency.Voice.TTS.Command,
-			Args:        append([]string(nil), cfg.Agency.Voice.TTS.Args...),
+			Enabled:     ttsEnabled,
+			Command:     ttsCommand,
+			Args:        ttsArgs,
 			InputMode:   cfg.Agency.Voice.TTS.InputMode,
 			OutputMode:  cfg.Agency.Voice.TTS.OutputMode,
 			Language:    cfg.Agency.Voice.TTS.Language,

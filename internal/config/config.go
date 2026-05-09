@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -113,6 +114,10 @@ var defaultContextPaths = []string{
 	".github/copilot-instructions.md",
 	".cursorrules",
 	".cursor/rules/",
+	"agency.md",
+	"agency.local.md",
+	"Agency.md",
+	"Agency.local.md",
 	"CLAUDE.md",
 	"CLAUDE.local.md",
 	"teamcode.md",
@@ -245,7 +250,7 @@ func configureViper() {
 func setDefaults(debug bool) {
 	viper.SetDefault("data.directory", defaultDataDirectory)
 	viper.SetDefault("contextPaths", defaultContextPaths)
-	viper.SetDefault("tui.theme", "teamcode")
+	viper.SetDefault("tui.theme", "agency")
 	viper.SetDefault("autoCompact", true)
 	viper.SetDefault("agency.productName", "The Agency")
 
@@ -299,17 +304,33 @@ func setProviderDefaults() {
 			viper.Set("providers.copilot.apiKey", apiKey)
 		}
 	}
+	if hasCodexCredentials() {
+		viper.SetDefault("providers.codex.apiKey", "codex-auth-available")
+		if viper.GetString("providers.codex.apiKey") == "" {
+			viper.Set("providers.codex.apiKey", "codex-auth-available")
+		}
+	}
 
 	// Use this order to set the default models
-	// 1. Copilot
-	// 2. Anthropic
-	// 3. OpenAI
-	// 4. Google Gemini
-	// 5. Groq
-	// 6. OpenRouter
-	// 7. AWS Bedrock
-	// 8. Azure
-	// 9. Google Cloud VertexAI
+	// 1. Codex
+	// 2. Copilot
+	// 3. Anthropic
+	// 4. OpenAI
+	// 5. Google Gemini
+	// 6. Groq
+	// 7. OpenRouter
+	// 8. AWS Bedrock
+	// 9. Azure
+	// 10. Google Cloud VertexAI
+
+	// codex configuration
+	if key := viper.GetString("providers.codex.apiKey"); strings.TrimSpace(key) != "" {
+		viper.SetDefault("agents.coder.model", models.CodexCLI)
+		viper.SetDefault("agents.summarizer.model", models.CodexCLI)
+		viper.SetDefault("agents.task.model", models.CodexCLI)
+		viper.SetDefault("agents.title.model", models.CodexCLI)
+		return
+	}
 
 	// copilot configuration
 	if key := viper.GetString("providers.copilot.apiKey"); strings.TrimSpace(key) != "" {
@@ -703,6 +724,10 @@ func Validate() error {
 // getProviderAPIKey gets the API key for a provider from environment variables
 func getProviderAPIKey(provider models.ModelProvider) string {
 	switch provider {
+	case models.ProviderCodex:
+		if hasCodexCredentials() {
+			return "codex-auth-available"
+		}
 	case models.ProviderAnthropic:
 		return os.Getenv("ANTHROPIC_API_KEY")
 	case models.ProviderOpenAI:
@@ -729,6 +754,18 @@ func getProviderAPIKey(provider models.ModelProvider) string {
 
 // setDefaultModelForAgent sets a default model for an agent based on available providers
 func setDefaultModelForAgent(agent AgentName) bool {
+	if hasCodexCredentials() {
+		maxTokens := int64(5000)
+		if agent == AgentTitle {
+			maxTokens = 80
+		}
+
+		cfg.Agents[agent] = Agent{
+			Model:     models.CodexCLI,
+			MaxTokens: maxTokens,
+		}
+		return true
+	}
 	if hasCopilotCredentials() {
 		maxTokens := int64(5000)
 		if agent == AgentTitle {
@@ -874,6 +911,29 @@ func setDefaultModelForAgent(agent AgentName) bool {
 	}
 
 	return false
+}
+
+func hasCodexCredentials() bool {
+	if _, err := exec.LookPath("codex"); err != nil {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".codex", "auth.json"))
+	if err != nil {
+		return false
+	}
+	var auth struct {
+		Tokens struct {
+			AccessToken string `json:"access_token"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal(data, &auth); err != nil {
+		return false
+	}
+	return strings.TrimSpace(auth.Tokens.AccessToken) != ""
 }
 
 func updateCfgFile(updateCfg func(config *Config)) error {

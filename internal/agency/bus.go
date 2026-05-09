@@ -158,14 +158,23 @@ func (b *RedisEventBus) dial(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	reader := bufio.NewReader(conn)
 	if b.cfg.Password != "" {
 		if err := writeRedisCommand(conn, "AUTH", b.cfg.Password); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		if err := readRedisSimpleResponse(reader); err != nil {
 			conn.Close()
 			return nil, err
 		}
 	}
 	if b.cfg.DB > 0 {
 		if err := writeRedisCommand(conn, "SELECT", strconv.Itoa(b.cfg.DB)); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		if err := readRedisSimpleResponse(reader); err != nil {
 			conn.Close()
 			return nil, err
 		}
@@ -186,6 +195,9 @@ func (b *RedisEventBus) readLoop(ctx context.Context, conn net.Conn, out chan Wa
 		msg, err := readRedisPubSubMessage(reader)
 		if err != nil {
 			return
+		}
+		if msg == "" {
+			continue
 		}
 		var signal WakeSignal
 		if err := json.Unmarshal([]byte(msg), &signal); err != nil {
@@ -237,25 +249,55 @@ func readRedisPubSubMessage(r *bufio.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if kind != '$' {
+		switch kind {
+		case '$':
+			lenLine, err := r.ReadString('\n')
+			if err != nil {
+				return "", err
+			}
+			size, err := strconv.Atoi(strings.TrimSpace(lenLine))
+			if err != nil {
+				return "", err
+			}
+			buf := make([]byte, size+2)
+			if _, err := r.Read(buf); err != nil {
+				return "", err
+			}
+			parts = append(parts, string(buf[:size]))
+		case ':', '+':
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, strings.TrimSpace(line))
+		default:
 			return "", fmt.Errorf("unexpected RESP kind: %q", kind)
 		}
-		lenLine, err := r.ReadString('\n')
-		if err != nil {
-			return "", err
-		}
-		size, err := strconv.Atoi(strings.TrimSpace(lenLine))
-		if err != nil {
-			return "", err
-		}
-		buf := make([]byte, size+2)
-		if _, err := r.Read(buf); err != nil {
-			return "", err
-		}
-		parts = append(parts, string(buf[:size]))
+	}
+	if len(parts) >= 1 && (parts[0] == "subscribe" || parts[0] == "psubscribe" || parts[0] == "pong") {
+		return "", nil
 	}
 	if len(parts) < 3 || parts[0] != "message" {
 		return "", fmt.Errorf("unexpected pubsub payload: %v", parts)
 	}
 	return parts[2], nil
+}
+
+func readRedisSimpleResponse(r *bufio.Reader) error {
+	prefix, err := r.ReadByte()
+	if err != nil {
+		return err
+	}
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	switch prefix {
+	case '+':
+		return nil
+	case '-':
+		return fmt.Errorf("redis error: %s", strings.TrimSpace(line))
+	default:
+		return fmt.Errorf("unexpected redis response: %q%s", prefix, strings.TrimSpace(line))
+	}
 }

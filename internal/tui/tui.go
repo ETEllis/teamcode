@@ -9,6 +9,7 @@ import (
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/llm/agent"
 	"github.com/ETEllis/teamcode/internal/logging"
+	"github.com/ETEllis/teamcode/internal/message"
 	"github.com/ETEllis/teamcode/internal/permission"
 	"github.com/ETEllis/teamcode/internal/pubsub"
 	"github.com/ETEllis/teamcode/internal/session"
@@ -456,7 +457,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model := a.app.CoderAgent.Model()
 			contextWindow := model.ContextWindow
 			tokens := a.selectedSession.CompletionTokens + a.selectedSession.PromptTokens
-			if (tokens >= int64(float64(contextWindow)*0.95)) && config.Get().AutoCompact {
+			if (tokens >= int64(float64(contextWindow)*0.95)) && config.Get().AutoCompact && shouldAutoCompactSession(a.app, a.selectedSession.ID) {
 				return a, util.CmdHandler(dialog.StartCompactSessionMsg{})
 			}
 		}
@@ -493,7 +494,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.showModelDialog = false
 
 		if a.app.CoderAgent == nil {
-			return a, util.ReportError(fmt.Errorf("no AI provider configured"))
+			return a, util.ReportError(fmt.Errorf("no provider configured — run codex login, set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY, or run: ollama serve"))
 		}
 
 		model, err := a.app.CoderAgent.Update(config.AgentCoder, msg.Model.ID)
@@ -827,6 +828,24 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
+func shouldAutoCompactSession(app *app.App, sessionID string) bool {
+	msgs, err := app.Messages.List(context.Background(), sessionID)
+	if err != nil {
+		return false
+	}
+
+	userTurns := 0
+	for _, msg := range msgs {
+		if msg.Role == message.User {
+			userTurns++
+		}
+	}
+
+	// Keep one-off commands and short sessions readable instead of instantly
+	// replacing the visible result with an auto-generated summary.
+	return userTurns >= 3
+}
+
 // RegisterCommand adds a command to the command dialog
 func (a *appModel) RegisterCommand(cmd dialog.Command) {
 	a.commands = append(a.commands, cmd)
@@ -1149,12 +1168,13 @@ func New(app *app.App) tea.Model {
 
 	model.RegisterCommand(dialog.Command{
 		ID:          "init",
-		Title:       "Initialize Project",
-		Description: "Create or update the shared project memory file",
+		Title:       "Refresh Shared Memory",
+		Description: "Update Agency.md with the repo's current commands and conventions",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return tea.Batch(
 				util.CmdHandler(chat.SendMsg{
-					Text: dialog.InitProjectPrompt(),
+					Text:        dialog.InitProjectExecutionPrompt(),
+					DisplayText: chat.InitMemoryDisplayText,
 				}),
 			)
 		},
@@ -1174,7 +1194,7 @@ func New(app *app.App) tea.Model {
 	model.RegisterCommand(dialog.Command{
 		ID:          "agency-status",
 		Title:       "Agency Status",
-		Description: "Inspect the live Agency office, constitution, and organization state",
+		Description: "Inspect the current office setup and status",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.ShowAgencyDialogMsg{})
 		},
@@ -1182,8 +1202,8 @@ func New(app *app.App) tea.Model {
 
 	model.RegisterCommand(dialog.Command{
 		ID:          "agency-bootstrap",
-		Title:       "Boot Agency Office",
-		Description: "Start or reconcile the configured office runtime",
+		Title:       "Start Agency Office",
+		Description: "Start or reconnect the current office",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.BootAgencyOfficeMsg{})
 		},
@@ -1192,7 +1212,7 @@ func New(app *app.App) tea.Model {
 	model.RegisterCommand(dialog.Command{
 		ID:          "agency-stop",
 		Title:       "Stop Agency Office",
-		Description: "Stop the current office runtime without changing constitutions",
+		Description: "Stop the current office without changing its setup",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.StopAgencyOfficeMsg{})
 		},
@@ -1200,8 +1220,8 @@ func New(app *app.App) tea.Model {
 
 	model.RegisterCommand(dialog.Command{
 		ID:          "agency-genesis",
-		Title:       "Record Agency Genesis",
-		Description: "Capture a genesis brief and constitution for the current office",
+		Title:       "Plan Agency Office",
+		Description: "Shape the office around a mission and constitution",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(dialog.ShowMultiArgumentsDialogMsg{
 				CommandID: cmd.ID,
@@ -1213,8 +1233,8 @@ func New(app *app.App) tea.Model {
 
 	model.RegisterCommand(dialog.Command{
 		ID:          "team-status",
-		Title:       "Team Status",
-		Description: "Inspect the active team state through the legacy TeamCode lens",
+		Title:       "Check Collaboration State",
+		Description: "Inspect the deeper collaboration state",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(chat.SendMsg{
 				Text: dialog.TeamStatusPrompt(),
@@ -1224,8 +1244,8 @@ func New(app *app.App) tea.Model {
 
 	model.RegisterCommand(dialog.Command{
 		ID:          "team-bootstrap",
-		Title:       "Bootstrap Coding Office",
-		Description: "Bootstrap or reconcile the default Agency coding office constitution",
+		Title:       "Set Up Coding Office",
+		Description: "Stand up or reconcile the default coding office",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(chat.SendMsg{
 				Text: dialog.AgencyBootstrapPrompt(""),
@@ -1235,8 +1255,8 @@ func New(app *app.App) tea.Model {
 
 	model.RegisterCommand(dialog.Command{
 		ID:          "team-templates",
-		Title:       "List Team Templates",
-		Description: "Summarize the available config-backed team templates and constitutions",
+		Title:       "List Agency Blueprints",
+		Description: "Summarize the available constitutions and templates",
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(chat.SendMsg{
 				Text: dialog.AgencyTemplatesPrompt(),

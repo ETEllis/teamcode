@@ -70,6 +70,15 @@ type agent struct {
 	activeRequests sync.Map
 }
 
+type displayContentContextKey struct{}
+
+func WithDisplayContent(ctx context.Context, display string) context.Context {
+	if strings.TrimSpace(display) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, displayContentContextKey{}, display)
+}
+
 func NewAgent(
 	agentName config.AgentName,
 	sessions session.Service,
@@ -266,12 +275,24 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
-	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
+	displayContent := content
+	if v, ok := ctx.Value(displayContentContextKey{}).(string); ok && strings.TrimSpace(v) != "" {
+		displayContent = v
+	}
+
+	userMsg, err := a.createUserMessage(ctx, sessionID, displayContent, attachmentParts)
 	if err != nil {
 		return a.err(fmt.Errorf("failed to create user message: %w", err))
 	}
 	// Append the new user message to the conversation history.
-	msgHistory := append(msgs, userMsg)
+	modelUserMsg := userMsg
+	for i, part := range modelUserMsg.Parts {
+		if _, ok := part.(message.TextContent); ok {
+			modelUserMsg.Parts[i] = message.TextContent{Text: content}
+			break
+		}
+	}
+	msgHistory := append(msgs, modelUserMsg)
 
 	for {
 		// Check for cancellation before each iteration
@@ -288,6 +309,10 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				a.messages.Update(context.Background(), agentMessage)
 				return a.err(ErrRequestCancelled)
 			}
+			if assistantError := humanizeProviderError(err); assistantError != "" {
+				agentMessage.AppendContent(assistantError)
+			}
+			a.finishMessage(context.Background(), &agentMessage, message.FinishReasonError)
 			return a.err(fmt.Errorf("failed to process events: %w", err))
 		}
 		if cfg.Debug {
@@ -440,6 +465,21 @@ out:
 func (a *agent) finishMessage(ctx context.Context, msg *message.Message, finishReson message.FinishReason) {
 	msg.AddFinish(finishReson)
 	_ = a.messages.Update(ctx, *msg)
+}
+
+func humanizeProviderError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	text := strings.TrimSpace(err.Error())
+	text = strings.TrimPrefix(text, "failed to process events: ")
+	text = strings.TrimPrefix(text, "codex exec: ")
+	if text == "" {
+		return ""
+	}
+
+	return "Request failed: " + text
 }
 
 func (a *agent) processEvent(ctx context.Context, sessionID string, assistantMsg *message.Message, event provider.ProviderEvent) error {

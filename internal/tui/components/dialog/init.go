@@ -110,7 +110,7 @@ func (m InitDialogCmp) View() string {
 		Foreground(t.Text()).
 		Width(maxWidth).
 		Padding(0, 1).
-		Render("Initialization generates a new TeamCode.md file that captures codebase knowledge for future agents. You can freely extend it to make the team better at operating in this project.")
+		Render("Initialization creates or updates Agency.md so future agents know the right build commands, conventions, and project context. Legacy TeamCode.md or OpenCode.md files are still respected when they already exist.")
 
 	question := baseStyle.
 		Foreground(t.Text()).

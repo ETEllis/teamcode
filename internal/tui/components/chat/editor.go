@@ -168,9 +168,6 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.attachments = append(m.attachments, msg.Attachment)
 	case tea.KeyMsg:
-		if m.textarea.Focused() && len(m.textarea.Value()) == 0 && len(msg.Runes) == 1 && msg.Runes[0] == '/' {
-			return m, util.CmdHandler(dialog.ShowCommandDialogMsg{})
-		}
 		if key.Matches(msg, DeleteKeyMaps.AttachmentDeleteMode) {
 			m.deleteMode = true
 			return m, nil
@@ -235,9 +232,13 @@ func (m *editorCmp) View() string {
 
 	if m.splashMode {
 		composerWidth := min(max(48, m.width-16), 72)
+		footerLabel := "enter send"
+		if m.session.ID != "" {
+			footerLabel = "fresh session ready"
+		}
 		footerLeft := styles.BaseStyle().
 			Foreground(t.TextMuted()).
-			Render("enter send")
+			Render(footerLabel)
 		modelLabel := ansi.Truncate(splashModelLabel(), min(22, composerWidth/3), "…")
 		footerRight := styles.BaseStyle().
 			Foreground(t.TextMuted()).

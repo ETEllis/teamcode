@@ -38,8 +38,8 @@ func main() {
 func generateSchema() map[string]any {
 	schema := map[string]any{
 		"$schema":     "http://json-schema.org/draft-07/schema#",
-		"title":       "TeamCode Configuration",
-		"description": "Configuration schema for the TeamCode application",
+		"title":       "Agency Configuration",
+		"description": "Configuration schema for the Agency application",
 		"type":        "object",
 		"properties":  map[string]any{},
 	}
@@ -87,6 +87,10 @@ func generateSchema() map[string]any {
 			".github/copilot-instructions.md",
 			".cursorrules",
 			".cursor/rules/",
+			"agency.md",
+			"agency.local.md",
+			"Agency.md",
+			"Agency.local.md",
 			"CLAUDE.md",
 			"CLAUDE.local.md",
 			"teamcode.md",
@@ -277,11 +281,11 @@ func generateSchema() map[string]any {
 
 	schema["properties"].(map[string]any)["agency"] = map[string]any{
 		"type":        "object",
-		"description": "The Agency runtime configuration surface",
+		"description": "Agency office and runtime configuration",
 		"properties": map[string]any{
 			"enabled": map[string]any{
 				"type":        "boolean",
-				"description": "Whether The Agency runtime should be considered active for product surfaces",
+				"description": "Whether Agency office features should be considered active for product surfaces",
 				"default":     false,
 			},
 			"productName": map[string]any{
@@ -296,7 +300,7 @@ func generateSchema() map[string]any {
 			},
 			"soloConstitution": map[string]any{
 				"type":        "string",
-				"description": "Constitution that preserves the solo TeamCode/OpenCode-derived behavior",
+				"description": "Constitution that preserves the solo compatibility workflow",
 				"default":     "solo",
 			},
 			"office": map[string]any{
@@ -312,7 +316,7 @@ func generateSchema() map[string]any {
 					"autoBoot": map[string]any{"type": "boolean", "default": false},
 					"sharedWorkplace": map[string]any{
 						"type":        "string",
-						"description": "Shared office filesystem root for The Agency runtime",
+						"description": "Shared office filesystem root for Agency",
 					},
 					"stateFile": map[string]any{
 						"type":        "string",
@@ -396,7 +400,7 @@ func generateSchema() map[string]any {
 			},
 			"constitutions": map[string]any{
 				"type":        "object",
-				"description": "Named constitutions that unify solo TeamCode behavior and Agency office behavior",
+				"description": "Named constitutions that unify solo compatibility behavior and Agency office behavior",
 				"additionalProperties": map[string]any{
 					"type": "object",
 					"properties": map[string]any{

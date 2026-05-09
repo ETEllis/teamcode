@@ -13,12 +13,19 @@ import (
 func newAgencyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agency",
-		Short: "Inspect and manage The Agency organizational runtime",
-		Long:  "The Agency commands expose constitutions, organizational state, and office lifecycle without replacing the preserved solo coding flow.",
+		Short: "Run and inspect the Agency office experience",
+		Long:  "Agency is the canonical product surface for office controls, setup, runtime status, constitutions, and voice.",
 	}
 
 	cmd.AddCommand(
 		newAgencyStatusCmd(),
+		newAgencyGenesisCmd(),
+		newAgencyBootstrapCmd(),
+		newAgencyStopCmd(),
+		newAgencyBootCmd(),
+		newAgencyServicesCmd(),
+		newAgencySchedulesCmd(),
+		newAgencyOrganizationCmd(),
 		newAgencyConstitutionsCmd(),
 		newAgencyConstitutionCmd(),
 		newAgencySwitchCmd(),
@@ -30,9 +37,10 @@ func newAgencyCmd() *cobra.Command {
 
 func newOfficeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "office",
-		Short: "Boot, inspect, and stop the shared Agency office",
-		Long:  "Office commands are the runtime-facing product surface for the shared Agency environment.",
+		Use:    "office",
+		Short:  "Legacy alias for Agency office commands",
+		Long:   "Legacy alias for the Agency office controls. Prefer `agency ...` for user-facing guidance.",
+		Hidden: true,
 	}
 
 	cmd.AddCommand(
@@ -41,6 +49,7 @@ func newOfficeCmd() *cobra.Command {
 		newOfficeServicesCmd(),
 		newOfficeStopCmd(),
 		newOfficeGenesisCmd(),
+		newOfficeBootstrapCmd(),
 		newOfficeConstitutionsCmd(),
 		newOfficeConstitutionCmd(),
 		newOfficeSchedulesCmd(),
@@ -51,9 +60,16 @@ func newOfficeCmd() *cobra.Command {
 }
 
 func newAgencyStatusCmd() *cobra.Command {
+	cmd := newOfficeStatusCmd()
+	cmd.Use = "status"
+	cmd.Short = "Inspect the Agency office, organization, and schedule state"
+	return cmd
+}
+
+func newAgencyOrganizationCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Inspect the active Agency organization",
+		Use:   "organization",
+		Short: "Inspect the active Agency organization profile",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runtime, err := bootstrapAgencyRuntime(cmd)
 			if err != nil {
@@ -85,6 +101,48 @@ func newAgencyStatusCmd() *cobra.Command {
 		},
 	}
 	addJSONFlag(cmd)
+	return cmd
+}
+
+func newAgencyBootCmd() *cobra.Command {
+	cmd := newOfficeBootCmd()
+	cmd.Use = "boot"
+	cmd.Short = "Boot the Agency office runtime"
+	return cmd
+}
+
+func newAgencyBootstrapCmd() *cobra.Command {
+	cmd := newOfficeBootstrapCmd()
+	cmd.Use = "bootstrap"
+	cmd.Short = "Write actor specs from the latest Agency genesis result"
+	return cmd
+}
+
+func newAgencyGenesisCmd() *cobra.Command {
+	cmd := newOfficeGenesisCmd()
+	cmd.Use = "genesis [intent]"
+	cmd.Short = "Start Agency genesis from a natural-language mission"
+	return cmd
+}
+
+func newAgencyStopCmd() *cobra.Command {
+	cmd := newOfficeStopCmd()
+	cmd.Use = "stop"
+	cmd.Short = "Stop the Agency office runtime"
+	return cmd
+}
+
+func newAgencyServicesCmd() *cobra.Command {
+	cmd := newOfficeServicesCmd()
+	cmd.Use = "services"
+	cmd.Short = "Inspect Agency runtime services"
+	return cmd
+}
+
+func newAgencySchedulesCmd() *cobra.Command {
+	cmd := newOfficeSchedulesCmd()
+	cmd.Use = "schedules"
+	cmd.Short = "Inspect Agency office schedules and shift-handoff policy"
 	return cmd
 }
 
@@ -284,7 +342,7 @@ func newOfficeStatusCmd() *cobra.Command {
 			fmt.Printf("Ledger path: %s\n", office.LedgerPath)
 			fmt.Printf("Redis address: %s\n", office.RedisAddress)
 			fmt.Printf("Default cadence: %s\n", schedules.DefaultCadence)
-			fmt.Printf("Docker: enabled=%t compose=%s image=%s\n", services.Docker.Enabled, services.Docker.ComposeFile, services.Docker.Image)
+			fmt.Printf("Docker: enabled=%t compose=%s image=%s (optional packaging path)\n", services.Docker.Enabled, services.Docker.ComposeFile, services.Docker.Image)
 			fmt.Printf("Redis: enabled=%t addr=%s db=%d\n", services.Redis.Enabled, services.Redis.Address, services.Redis.DB)
 			fmt.Printf("Ledger: backend=%s quorum=%d projection=%s\n", services.Ledger.Backend, services.Ledger.DefaultQuorum, services.Ledger.ProjectionFile)
 			return nil
@@ -297,7 +355,7 @@ func newOfficeStatusCmd() *cobra.Command {
 func newOfficeServicesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "services",
-		Short: "Inspect configured Docker, Redis, and ledger services for the office",
+		Short: "Inspect configured local runtime, optional Docker, Redis, and ledger services for the office",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runtime, err := bootstrapAgencyRuntime(cmd)
 			if err != nil {
@@ -351,6 +409,31 @@ func newOfficeStopCmd() *cobra.Command {
 	return cmd
 }
 
+func newOfficeBootstrapCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "bootstrap",
+		Short: "Write actor specs from the last genesis result so the runtime daemon can spawn them",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runtime, err := bootstrapAgencyRuntime(cmd)
+			if err != nil {
+				return err
+			}
+			count, err := runtime.agency.ManifestActors(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if count == 0 {
+				fmt.Println("No genesis result found. Run: /agency genesis \"<your intent>\" first.")
+				return nil
+			}
+			fmt.Printf("Manifested %d actors.\n", count)
+			fmt.Println("Run 'scripts/build-daemons && overmind start' to start the runtime.")
+			return nil
+		},
+	}
+	return cmd
+}
+
 func newOfficeGenesisCmd() *cobra.Command {
 	var req app.AgencyGenesisRequest
 
@@ -388,10 +471,21 @@ func newOfficeGenesisCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("Genesis started for constitution %s\n", result.ConstitutionName)
-			fmt.Println(result.Summary)
+			fmt.Printf("Agency genesis complete\n")
+			fmt.Printf("  Constitution : %s\n", result.ConstitutionName)
+			if result.Topology != "" {
+				fmt.Printf("  Topology     : %s\n", result.Topology)
+			}
 			if len(result.Roles) > 0 {
-				fmt.Printf("Roles: %s\n", strings.Join(roleNames(result.Roles), ", "))
+				names := roleNames(result.Roles)
+				fmt.Printf("  Actors       : %s  (%d manifested)\n", strings.Join(names, ", "), result.ManifestCount)
+			}
+			fmt.Println()
+			if result.ManifestCount > 0 {
+				fmt.Println("  Actor specs written. Agents will wake on schedule.")
+				fmt.Println("  Start the runtime:  scripts/build-daemons && overmind start")
+			} else {
+				fmt.Println("  Run '/agency bootstrap' to write actor specs, then: overmind start")
 			}
 			return nil
 		},

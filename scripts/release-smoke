@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+# Agency release smoke gate.
+#
+# Default mode runs static/build gates only. Use --live from a normal Terminal
+# session to prove Redis IPC, and --with-overmind to also start/inspect the
+# local Procfile runtime.
+set -euo pipefail
+
+RUN_LIVE=false
+RUN_OVERMIND=false
+RUN_STATIC=true
+STARTED_REDIS=false
+STARTED_OVERMIND=false
+OVERMIND_SMOKE_ORG="agency-smoke-$$"
+OVERMIND_SMOKE_BASE=""
+OVERMIND_SMOKE_PROCFILE=""
+LOG_FILE=""
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/release-smoke [--live] [--with-overmind] [--skip-static] [--log FILE]
+
+Runs the release gates that prove Agency's terminal-first runtime path.
+
+Options:
+  --live           Also run Redis-backed IPC smoke. Requires redis-server.
+  --with-overmind  Also daemonize Overmind, inspect process status, then stop it.
+                   Implies --live.
+  --skip-static    Skip Go tests/builds and run only the requested live gate.
+  --log FILE       Write all output to FILE for durable release evidence.
+  -h, --help       Show this help.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --live)
+      RUN_LIVE=true
+      ;;
+    --with-overmind)
+      RUN_LIVE=true
+      RUN_OVERMIND=true
+      ;;
+    --skip-static)
+      RUN_STATIC=false
+      ;;
+    --log)
+      shift
+      LOG_FILE="${1:?missing value for --log}"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if ! $RUN_STATIC && ! $RUN_LIVE; then
+  echo "--skip-static requires --live or --with-overmind." >&2
+  usage >&2
+  exit 2
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+export GOCACHE="${GOCACHE:-$REPO_ROOT/.tmp/go-build}"
+mkdir -p "$GOCACHE"
+
+if [ -n "$LOG_FILE" ]; then
+  mkdir -p "$(dirname "$LOG_FILE")"
+  exec > "$LOG_FILE" 2>&1
+  echo "Writing release smoke output to $LOG_FILE"
+fi
+
+section() {
+  printf '\n== %s ==\n' "$1"
+}
+
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+cleanup() {
+  if $STARTED_OVERMIND; then
+    overmind quit 2>/dev/null || true
+  fi
+  if $STARTED_REDIS; then
+    kill "${REDIS_PID:-0}" 2>/dev/null || true
+  fi
+  if [ -n "$OVERMIND_SMOKE_BASE" ]; then
+    rm -rf "$OVERMIND_SMOKE_BASE"
+  fi
+}
+
+write_overmind_smoke_procfile() {
+  OVERMIND_SMOKE_PROCFILE="$OVERMIND_SMOKE_BASE/Procfile.smoke"
+  cat > "$OVERMIND_SMOKE_PROCFILE" <<EOF
+redis:     redis-server --save "" --appendonly no --loglevel notice
+office:    env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-office-daemon
+runtime:   env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-runtime-daemon
+scheduler: env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-scheduler-daemon
+ipc:       env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-ipc-server
+EOF
+}
+
+overmind_status_healthy() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+text = open(path, encoding="utf-8", errors="replace").read()
+text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+bad_words = ("stopped", "exited", "dead", "crash", "failed", "error")
+missing = []
+
+for process in ("redis", "office", "runtime", "scheduler", "ipc"):
+    pattern = re.compile(r"(^|[^A-Za-z0-9_-])" + re.escape(process) + r"([^A-Za-z0-9_-]|$)", re.I)
+    lines = [line for line in text.splitlines() if pattern.search(line)]
+    if not lines:
+        missing.append(process)
+        continue
+    for line in lines:
+        lowered = line.lower()
+        if any(word in lowered for word in bad_words):
+            print(f"unhealthy Overmind status for {process}: {line}", file=sys.stderr)
+            sys.exit(1)
+
+if missing:
+    print("missing Overmind process status for: " + ", ".join(missing), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+dump_overmind_output_once() {
+  overmind echo >&2 &
+  local echo_pid=$!
+  sleep 1
+  kill "$echo_pid" 2>/dev/null || true
+  wait "$echo_pid" 2>/dev/null || true
+}
+
+dump_overmind_diagnostics() {
+  echo "Overmind diagnostics:" >&2
+  overmind status >&2 || true
+  echo "Expected smoke org: $OVERMIND_SMOKE_ORG" >&2
+  echo "Expected smoke base: $OVERMIND_SMOKE_BASE" >&2
+  if [ -n "$OVERMIND_SMOKE_BASE" ]; then
+    echo "Socket files under smoke base:" >&2
+    find "$OVERMIND_SMOKE_BASE" -maxdepth 4 -type s -name 'ipc-*.sock' -print >&2 2>/dev/null || true
+    echo "Agency files under smoke base:" >&2
+    find "$OVERMIND_SMOKE_BASE" -maxdepth 4 -print >&2 2>/dev/null || true
+  fi
+  echo "Overmind environment probe:" >&2
+  overmind run sh -lc 'printf "AGENCY_ORG_ID=%s\nAGENCY_BASE_DIR=%s\nAGENCY_REDIS_ADDR=%s\n" "$AGENCY_ORG_ID" "$AGENCY_BASE_DIR" "$AGENCY_REDIS_ADDR"; find "${AGENCY_BASE_DIR:-.}" -maxdepth 4 -type s -name "ipc-*.sock" -print 2>/dev/null || true' >&2 || true
+  echo "Overmind process output:" >&2
+  dump_overmind_output_once
+}
+
+if $RUN_STATIC; then
+  section "Static gates"
+  need go
+  need python3
+  bash -n scripts/setup scripts/install-voice scripts/test-ipc scripts/build-daemons scripts/release-smoke scripts/live-release-proof scripts/verify-release-proof
+  go test ./...
+  go build -o agency .
+  scripts/build-daemons
+
+  ./agency agency services --json | python3 -c '
+import json, sys
+obj = json.load(sys.stdin)
+if obj["docker"]["enabled"] is not False:
+    raise SystemExit("expected docker.enabled=false")
+print("docker.enabled=false")
+print("redis.address=" + obj["redis"]["address"])
+'
+else
+  section "Static gates skipped"
+  echo "Skipping static gates by request. Use this only after scripts/release-smoke has passed."
+fi
+
+if ! $RUN_LIVE; then
+  section "Live gates skipped"
+  cat <<'EOF'
+Static release gates passed.
+
+To prove the local runtime from a normal Terminal session, run:
+  scripts/release-smoke --live
+
+To include an Overmind process-status smoke:
+  scripts/release-smoke --with-overmind
+
+To run the full terminal release proof with durable logs:
+  scripts/live-release-proof --log-dir .tmp/release-proof
+
+After a full static/live pass, rerun only the Overmind live gate with:
+  scripts/release-smoke --with-overmind --skip-static
+EOF
+  exit 0
+fi
+
+need redis-server
+need redis-cli
+need nc
+if ! $RUN_OVERMIND; then
+  need go
+fi
+
+if $RUN_OVERMIND; then
+  section "Overmind gate"
+  need overmind
+  need python3
+
+  OVERMIND_SMOKE_BASE=".tmp/om-$$"
+  rm -rf "$OVERMIND_SMOKE_BASE"
+  mkdir -p "$OVERMIND_SMOKE_BASE"
+  write_overmind_smoke_procfile
+  trap cleanup EXIT
+  overmind quit 2>/dev/null || true
+  rm -f .overmind.sock
+  overmind start --procfile "$OVERMIND_SMOKE_PROCFILE" --root "$REPO_ROOT" --daemonize
+  STARTED_OVERMIND=true
+
+  for _ in $(seq 1 20); do
+    if overmind status >/tmp/agency-overmind-status.txt 2>/tmp/agency-overmind-status.err &&
+      overmind_status_healthy /tmp/agency-overmind-status.txt 2>/tmp/agency-overmind-health.err; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  if ! overmind status >/tmp/agency-overmind-status.txt 2>/tmp/agency-overmind-status.err; then
+    cat /tmp/agency-overmind-status.err >&2 || true
+    exit 1
+  fi
+  if ! overmind_status_healthy /tmp/agency-overmind-status.txt 2>/tmp/agency-overmind-health.err; then
+    cat /tmp/agency-overmind-health.err >&2 || true
+    echo "Captured status:" >&2
+    cat /tmp/agency-overmind-status.txt >&2
+    exit 1
+  fi
+
+  cat /tmp/agency-overmind-status.txt
+  echo "Startup process output:" >&2
+  dump_overmind_output_once
+
+  for _ in $(seq 1 20); do
+    if redis-cli ping >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.25
+  done
+
+  if ! redis-cli ping >/dev/null 2>&1; then
+    echo "Redis is not reachable after Overmind start" >&2
+    exit 1
+  fi
+
+  section "Redis IPC gate"
+  if ! scripts/test-ipc --existing --org "$OVERMIND_SMOKE_ORG" --base "$OVERMIND_SMOKE_BASE"; then
+    dump_overmind_diagnostics
+    exit 1
+  fi
+
+  overmind quit
+  STARTED_OVERMIND=false
+  echo "Release smoke passed."
+  exit 0
+fi
+
+section "Redis IPC gate"
+if ! redis-cli ping >/dev/null 2>&1; then
+  echo "Redis is not running; starting temporary local redis-server..."
+  redis-server --save "" --appendonly no --loglevel warning &
+  REDIS_PID=$!
+  STARTED_REDIS=true
+  trap cleanup EXIT
+  for _ in $(seq 1 20); do
+    if redis-cli ping >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.25
+  done
+fi
+
+if ! redis-cli ping >/dev/null 2>&1; then
+  echo "Redis did not become reachable on 127.0.0.1:6379" >&2
+  exit 1
+fi
+
+scripts/test-ipc
+
+if ! $RUN_OVERMIND; then
+  section "Overmind gate skipped"
+  echo "Live Redis IPC gate passed. Run scripts/release-smoke --with-overmind for full local process proof."
+  exit 0
+fi

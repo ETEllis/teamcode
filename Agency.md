@@ -1,0 +1,38 @@
+# Agency.md
+- Primary shared repo memory. Keep `TeamCode.md` and `OpenCode.md` as compatibility-only mirrors for older flows.
+- Product naming: call the product Agency. Keep `teamcode` for the Go module path, binary name, and legacy config/schema surfaces.
+- Verified in this workspace on 2026-04-02:
+  - CLI build: `go build -o teamcode .` passes.
+  - Compile check: `go build ./...` passes.
+  - Daemon bundle: `./scripts/build-daemons` passes.
+  - Focused package test: `go test ./internal/llm/tools` passes.
+  - Full test suite: `go test ./...` currently fails in `internal/llm/prompt` at `TestGetContextFromPaths` because file ordering differs from the test expectation.
+- Practical format/lint baseline:
+  - Format with `gofmt -w .`
+  - No dedicated linter config is checked in.
+  - `./scripts/check_hidden_chars.sh` surfaces a hidden-character hit in `internal/lsp/protocol/tsprotocol.go`; treat it as a targeted safety check instead of a clean CI gate.
+- Runtime/dev reality:
+  - `./scripts/build-daemons` builds `dist/agency-{office,runtime,scheduler,actor}-daemon` plus `dist/agency-ipc-server`.
+  - Local office boot path is `overmind start`.
+  - `Procfile` expects `redis-server` in `PATH` and launches `redis`, `office`, `runtime`, `scheduler`, and `ipc`.
+  - Local repo config lives in `.teamcode.json`; Agency is enabled, `currentConstitution` is `full-agency`, `soloConstitution` is `solo`, office mode is `distributed-office`, and shared state lives under `.teamcode/agency/`.
+- Agent-facing style conventions:
+  - Let `gofmt` handle import grouping and formatting.
+  - Follow idiomatic Go formatting with tabs and trailing commas where needed.
+  - Pass `context.Context` first for request-scoped and I/O-heavy work.
+  - Prefer concrete structs/services; keep `map[string]any` at JSON, schema, config, and tool boundaries.
+  - Return wrapped errors with `%w`, use explicit validation failures, and prefer `internal/logging` over ad hoc printing.
+  - Keep inline comments sparse.
+  - Tests commonly use `testing` with `testify/assert` and `require`, often in table-style `t.Run(...)` cases.
+- Agent-facing architecture map:
+  - CLI entrypoints live in `cmd/`.
+  - App wiring and organization-facing services live in `internal/app`.
+  - Agency runtime, daemons, routing, scheduling, consensus, ledger, and provider integration live in `internal/agency`.
+  - Persistence is SQLite in `internal/db` with Goose migrations in `internal/db/migrations` and sqlc-generated query code in `internal/db/*.sql.go`.
+  - TUI code lives under `internal/tui`.
+  - Legacy collaboration/state services still live under `internal/team`; extend those services instead of creating parallel systems.
+  - Long-lived goroutines should stay cancellable and fit the existing runtime/service boundaries.
+- Local editor rules checked on 2026-04-02:
+  - No `.cursorrules` file found.
+  - No `.cursor/rules/` directory found.
+  - No `.github/copilot-instructions.md` file found.

@@ -1,0 +1,39 @@
+FROM golang:1.24-bookworm AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN mkdir -p /out && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/agency-office-daemon ./internal/agency/cmd/office-daemon && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/agency-runtime-daemon ./internal/agency/cmd/runtime-daemon && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/agency-scheduler-daemon ./internal/agency/cmd/scheduler-daemon && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/agency-actor-daemon ./internal/agency/cmd/actor-daemon
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    redis-tools \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY --from=build /out/agency-office-daemon /usr/local/bin/agency-office-daemon
+COPY --from=build /out/agency-runtime-daemon /usr/local/bin/agency-runtime-daemon
+COPY --from=build /out/agency-scheduler-daemon /usr/local/bin/agency-scheduler-daemon
+COPY --from=build /out/agency-actor-daemon /usr/local/bin/agency-actor-daemon
+
+RUN mkdir -p /shared_workplace /shared_workplace/.agency
+
+ENV AGENCY_BASE_DIR=/shared_workplace/.agency
+ENV AGENCY_SHARED_WORKPLACE=/shared_workplace
+ENV AGENCY_REDIS_ADDR=redis:6379
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["agency-office-daemon"]

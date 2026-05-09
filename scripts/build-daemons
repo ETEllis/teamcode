@@ -11,6 +11,7 @@ go build -o dist/agency-office-daemon    ./internal/agency/cmd/office-daemon
 go build -o dist/agency-runtime-daemon   ./internal/agency/cmd/runtime-daemon
 go build -o dist/agency-scheduler-daemon ./internal/agency/cmd/scheduler-daemon
 go build -o dist/agency-actor-daemon     ./internal/agency/cmd/actor-daemon
+go build -o dist/agency-ipc-server      ./internal/agency/cmd/ipc-server
 
 echo "Built:"
-ls -lh dist/agency-*-daemon
+ls -lh dist/agency-*

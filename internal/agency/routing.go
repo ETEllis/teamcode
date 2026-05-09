@@ -42,6 +42,7 @@ func NewCredentialBroker() *CredentialBroker {
 		envKey   string
 		modelID  string
 	}{
+		{"codex", "", "codex-cli"}, // auth via ~/.codex/auth.json — Available() does real check
 		{"anthropic", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001"},
 		{"openai", "OPENAI_API_KEY", "gpt-4o-mini"},
 		{"gemini", "GEMINI_API_KEY", "gemini-2.0-flash"},

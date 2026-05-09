@@ -11,6 +11,7 @@ import (
 	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/completions"
 	"github.com/ETEllis/teamcode/internal/config"
+	llmagent "github.com/ETEllis/teamcode/internal/llm/agent"
 	"github.com/ETEllis/teamcode/internal/message"
 	"github.com/ETEllis/teamcode/internal/session"
 	"github.com/ETEllis/teamcode/internal/tui/components/chat"
@@ -32,10 +33,10 @@ type chatPage struct {
 	session              session.Session
 	completionDialog     dialog.CompletionDialog
 	showCompletionDialog bool
-	broadcastCh <-chan app.BroadcastMsg
-	bulletinCh  <-chan app.BulletinRecord
-	approval    *chat.ApprovalCmp
-	orgID       string
+	broadcastCh          <-chan app.BroadcastMsg
+	bulletinCh           <-chan app.BulletinRecord
+	approval             *chat.ApprovalCmp
+	orgID                string
 }
 
 type ChatKeyMap struct {
@@ -67,7 +68,19 @@ func (p *chatPage) Init() tea.Cmd {
 	if p.app.Agency != nil {
 		org, _ := p.app.Agency.InspectOrganization()
 		if org.Constitution.Name != "" || org.CurrentConstitution != "" {
-			orgID := org.CurrentConstitution
+			orgID := ""
+			if cfg := config.Get(); cfg != nil {
+				orgID = strings.TrimSpace(cfg.Team.ActiveTeam)
+				if orgID == "" {
+					orgID = strings.TrimSpace(cfg.Agency.CurrentConstitution)
+				}
+				if orgID == "" {
+					orgID = strings.TrimSpace(cfg.Agency.SoloConstitution)
+				}
+			}
+			if orgID == "" {
+				orgID = org.CurrentConstitution
+			}
 			if orgID == "" {
 				orgID = org.Constitution.Name
 			}
@@ -167,7 +180,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.CompletionDialogCloseMsg:
 		p.showCompletionDialog = false
 	case chat.SendMsg:
-		cmd := p.sendMessage(msg.Text, msg.Attachments)
+		cmd := p.sendMessage(msg.Text, msg.DisplayText, msg.Attachments)
 		if cmd != nil {
 			return p, cmd
 		}
@@ -188,7 +201,7 @@ func (p *chatPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Handle custom command execution
-		cmd := p.sendMessage(content, nil)
+		cmd := p.sendMessage(content, "", nil)
 		if cmd != nil {
 			return p, cmd
 		}
@@ -254,13 +267,13 @@ func (p *chatPage) clearSidebar() tea.Cmd {
 	return p.layout.ClearRightPanel()
 }
 
-func (p *chatPage) sendMessage(text string, attachments []message.Attachment) tea.Cmd {
+func (p *chatPage) sendMessage(text string, displayText string, attachments []message.Attachment) tea.Cmd {
 	if slashCmd := p.resolveSlashCommand(strings.TrimSpace(text)); slashCmd != nil {
 		return slashCmd
 	}
 
 	if p.app.CoderAgent == nil {
-		return util.ReportError(fmt.Errorf("no AI provider configured: please set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another supported provider API key"))
+		return util.ReportError(fmt.Errorf("no provider configured — run codex login, set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY, or run Ollama locally (ollama serve). Run: scripts/setup"))
 	}
 
 	var cmds []tea.Cmd
@@ -274,7 +287,12 @@ func (p *chatPage) sendMessage(text string, attachments []message.Attachment) te
 		cmds = append(cmds, util.CmdHandler(chat.SessionSelectedMsg(session)))
 	}
 
-	_, err := p.app.CoderAgent.Run(context.Background(), p.session.ID, text, attachments...)
+	ctx := context.Background()
+	if strings.TrimSpace(displayText) != "" {
+		ctx = llmagent.WithDisplayContent(ctx, displayText)
+	}
+
+	_, err := p.app.CoderAgent.Run(ctx, p.session.ID, text, attachments...)
 	if err != nil {
 		return util.ReportError(err)
 	}
@@ -299,13 +317,20 @@ func (p *chatPage) resolveSlashCommand(text string) tea.Cmd {
 	case "sessions":
 		return util.CmdHandler(dialog.ShowSessionDialogMsg{})
 	case "new":
-		p.session = session.Session{}
+		newSession, err := p.app.Sessions.Create(context.Background(), "New Session")
+		if err != nil {
+			return util.ReportError(err)
+		}
+		p.session = newSession
 		return tea.Batch(
-			p.clearSidebar(),
-			util.CmdHandler(chat.SessionClearedMsg{}),
+			util.CmdHandler(chat.SessionSelectedMsg(newSession)),
+			util.ReportInfo("Started a fresh session"),
 		)
 	case "init":
-		return util.CmdHandler(chat.SendMsg{Text: dialog.InitProjectPrompt()})
+		return util.CmdHandler(chat.SendMsg{
+			Text:        dialog.InitProjectExecutionPrompt(),
+			DisplayText: chat.InitMemoryDisplayText,
+		})
 	case "models":
 		return util.CmdHandler(dialog.ShowModelDialogMsg{})
 	case "model":
@@ -380,6 +405,10 @@ func (p *chatPage) resolveSlashCommand(text string) tea.Cmd {
 		if commandName == command.ID ||
 			commandName == strings.TrimPrefix(command.ID, dialog.UserCommandPrefix) ||
 			commandName == strings.TrimPrefix(command.ID, dialog.ProjectCommandPrefix) {
+			command.Invocation = "/" + commandText
+			if len(parts) > 1 {
+				command.ArgsText = strings.Join(parts[1:], " ")
+			}
 			return command.Handler(command)
 		}
 	}
@@ -437,17 +466,22 @@ func (p *chatPage) playTTS(text, actorID string) {
 
 	// Replace placeholders. Voice is resolved from actor role suffix.
 	voiceID := agency.VoiceIDForRole(actorID)
+	outputPath := fmt.Sprintf("/tmp/agency-tts-%d.wav", time.Now().UnixMilli())
 	finalArgs := make([]string, len(args))
 	for i, a := range args {
 		a = strings.ReplaceAll(a, "{voice}", voiceID)
 		a = strings.ReplaceAll(a, "{text}", text)
-		// For {output} use a temp path derived from timestamp.
-		a = strings.ReplaceAll(a, "{output}", fmt.Sprintf("/tmp/agency-tts-%d.wav", time.Now().UnixMilli()))
+		a = strings.ReplaceAll(a, "{output}", outputPath)
 		finalArgs[i] = a
 	}
 
 	c := exec.Command(cmd, finalArgs...)
-	_ = c.Run() // fire and forget; errors are silently ignored
+	if err := c.Run(); err != nil {
+		return
+	}
+	if player, err := exec.LookPath("afplay"); err == nil {
+		_ = exec.Command(player, outputPath).Run()
+	}
 }
 
 func NewChatPage(app *app.App) tea.Model {

@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# Agency IPC smoke test — end-to-end in ~5 seconds
+set -euo pipefail
+
+ORG="smoke-test-$$"
+BASE=""
+CLEAN_BASE=false
+START_SERVER=true
+RUN_TMP=""
+OUT=""
+FIFO=""
+IPC_PID=""
+NC_PID=""
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/test-ipc [--existing --org ORG --base DIR]
+
+Runs an IPC fanout smoke against Redis.
+
+Options:
+  --existing  Connect to an already-running IPC server instead of starting one.
+  --org ORG   Organization id to use. Defaults to a per-run smoke-test id.
+  --base DIR  Base dir used to derive the IPC socket path.
+  -h, --help  Show this help.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --existing)
+      START_SERVER=false
+      ;;
+    --org)
+      shift
+      ORG="${1:?missing value for --org}"
+      ;;
+    --base)
+      shift
+      BASE="${1:?missing value for --base}"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [ -z "$BASE" ]; then
+  BASE="$(mktemp -d "${TMPDIR:-/tmp}/agency-smoke.XXXXXX")"
+  CLEAN_BASE=true
+fi
+
+RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/agency-ipc.XXXXXX")"
+SOCK="$BASE/.agency/ipc-$ORG.sock"
+OUT="$RUN_TMP/ipc-out.txt"
+FIFO="$RUN_TMP/client.fifo"
+
+cleanup() {
+  exec 3>&- 2>/dev/null || true
+  if [ -n "${NC_PID:-}" ]; then
+    kill "$NC_PID" 2>/dev/null || true
+  fi
+  if [ -n "${IPC_PID:-}" ]; then
+    kill "$IPC_PID" 2>/dev/null || true
+  fi
+  if $CLEAN_BASE; then
+    rm -rf "$BASE"
+  fi
+  rm -rf "$RUN_TMP"
+}
+trap cleanup EXIT
+
+wait_for_socket() {
+  for _ in $(seq 1 40); do
+    if [ -S "$SOCK" ]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "ERROR: IPC socket did not appear at $SOCK" >&2
+  return 1
+}
+
+wait_for_subscribers() {
+  local org_ch="agency.org.$ORG"
+  local approval_ch="agency.approval.$ORG"
+  local bulletin_ch="agency.bulletin.$ORG"
+
+  for _ in $(seq 1 40); do
+    if redis-cli --raw PUBSUB NUMSUB "$org_ch" "$approval_ch" "$bulletin_ch" |
+      awk 'NR % 2 == 0 && $1 < 1 { missing = 1 } END { exit missing }'; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "ERROR: IPC server did not subscribe to Redis channels for $ORG" >&2
+  redis-cli PUBSUB NUMSUB "$org_ch" "$approval_ch" "$bulletin_ch" >&2 || true
+  return 1
+}
+
+message_counts_ready() {
+  local broadcast approval bulletin
+  broadcast=$(grep -c '"type":"broadcast"' "$OUT" 2>/dev/null || true)
+  approval=$(grep -c '"type":"approval"' "$OUT" 2>/dev/null || true)
+  bulletin=$(grep -c '"type":"bulletin"' "$OUT" 2>/dev/null || true)
+  [ "${broadcast:-0}" -ge 1 ] && [ "${approval:-0}" -ge 1 ] && [ "${bulletin:-0}" -ge 1 ]
+}
+
+echo "=== Agency IPC Smoke Test ==="
+
+if $START_SERVER; then
+  echo "[1] Building ipc-server..."
+  if ! command -v go >/dev/null 2>&1; then
+    echo "ERROR: go not found; required when scripts/test-ipc starts its own IPC server" >&2
+    exit 1
+  fi
+  go build -o dist/agency-ipc-server ./internal/agency/cmd/ipc-server
+else
+  echo "[1] Using existing ipc-server binary/process..."
+fi
+
+echo "[2] Checking Redis..."
+if ! redis-cli ping > /dev/null 2>&1; then
+  echo "ERROR: Redis not running. Start it with: redis-server"
+  exit 1
+fi
+echo "    Redis OK"
+
+if $START_SERVER; then
+  echo "[3] Starting IPC server..."
+  mkdir -p "$BASE/.agency"
+  rm -f "$SOCK"
+  AGENCY_ORG_ID=$ORG AGENCY_BASE_DIR=$BASE AGENCY_REDIS_ADDR=localhost:6379 \
+    ./dist/agency-ipc-server &
+  IPC_PID=$!
+else
+  echo "[3] Using existing IPC server..."
+fi
+wait_for_socket
+
+echo "[4] Connecting client + handshake..."
+mkfifo "$FIFO"
+> "$OUT"
+# Keep the write end open for the full test so `nc` stays connected after the handshake.
+exec 3<>"$FIFO"
+nc -U "$SOCK" < "$FIFO" >> "$OUT" &
+NC_PID=$!
+printf '{"type":"handshake","payload":{"orgId":"%s","clientType":"cli"}}\n' "$ORG" >&3
+wait_for_subscribers
+
+echo "[5] Publishing test events via redis-cli..."
+TS=$(date +%s000)
+
+redis-cli PUBLISH "agency.org.$ORG" \
+  "{\"id\":\"t1\",\"organizationId\":\"$ORG\",\"actorId\":\"test-actor\",\"channel\":\"agency.org.$ORG\",\"kind\":\"broadcast\",\"payload\":{\"message\":\"smoke test broadcast\"},\"createdAt\":$TS}" \
+  > /dev/null
+
+redis-cli PUBLISH "agency.approval.$ORG" \
+  "{\"id\":\"t2\",\"organizationId\":\"$ORG\",\"actorId\":\"test-actor\",\"channel\":\"agency.approval.$ORG\",\"kind\":\"review\",\"payload\":{\"proposalId\":\"prop-smoke-1\",\"actionType\":\"ActionBroadcast\",\"target\":\"team\"},\"createdAt\":$TS}" \
+  > /dev/null
+
+redis-cli PUBLISH "agency.bulletin.$ORG" \
+  "{\"id\":\"t3\",\"organizationId\":\"$ORG\",\"actorId\":\"test-actor\",\"channel\":\"agency.bulletin.$ORG\",\"kind\":\"projection\",\"payload\":{\"directive\":\"test directive\",\"output\":\"test output ok\",\"score\":\"0.90\",\"provider\":\"test\",\"modelId\":\"claude\"},\"createdAt\":$TS}" \
+  > /dev/null
+
+for _ in $(seq 1 40); do
+  if message_counts_ready; then
+    break
+  fi
+  sleep 0.1
+done
+exec 3>&-
+kill $NC_PID 2>/dev/null || true
+
+echo ""
+echo "=== Messages received ==="
+cat "$OUT"
+
+B=$(grep -c '"type":"broadcast"' "$OUT" 2>/dev/null || true)
+A=$(grep -c '"type":"approval"'  "$OUT" 2>/dev/null || true)
+U=$(grep -c '"type":"bulletin"'  "$OUT" 2>/dev/null || true)
+B=${B:-0}
+A=${A:-0}
+U=${U:-0}
+
+echo ""
+if [ "$B" -ge 1 ] && [ "$A" -ge 1 ] && [ "$U" -ge 1 ]; then
+  echo "PASS  broadcast=$B  approval=$A  bulletin=$U"
+  exit 0
+else
+  echo "FAIL  broadcast=$B  approval=$A  bulletin=$U"
+  exit 1
+fi

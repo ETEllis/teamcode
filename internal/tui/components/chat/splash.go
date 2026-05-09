@@ -1,12 +1,15 @@
 package chat
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/config"
 	"github.com/ETEllis/teamcode/internal/llm/models"
+	"github.com/ETEllis/teamcode/internal/session"
 	"github.com/ETEllis/teamcode/internal/tui/styles"
 	"github.com/ETEllis/teamcode/internal/tui/theme"
 	"github.com/ETEllis/teamcode/internal/version"
@@ -23,35 +26,34 @@ func splashCommands(overview AgencyOverview) []splashCommand {
 		{Name: "/help", Description: "show help"},
 		{Name: "/sessions", Description: "list sessions"},
 		{Name: "/new", Description: "start a new session"},
-		{Name: "/agency status", Description: "inspect live office state"},
-		{Name: "/agency genesis <intent>", Description: "record a genesis brief"},
+		{Name: "/agency status", Description: "check office status"},
+		{Name: "/agency genesis <intent>", Description: "shape the office around a goal"},
 		{Name: "/model", Description: "switch model"},
 		{Name: "/theme", Description: "switch theme"},
 		{Name: "/skills", Description: "list installed skills"},
-		{Name: "/team", Description: "legacy team controls"},
+		{Name: "/team", Description: "advanced office controls"},
 		{Name: "/exit", Description: "exit the app"},
 	}
 	if overview.Running {
-		commands = append(commands[:4], append([]splashCommand{{Name: "/agency stop", Description: "stop the current office runtime"}}, commands[4:]...)...)
+		commands = append(commands[:4], append([]splashCommand{{Name: "/agency stop", Description: "stop the office"}}, commands[4:]...)...)
 	} else {
-		commands = append(commands[:4], append([]splashCommand{{Name: "/agency bootstrap", Description: "boot the current office constitution"}}, commands[4:]...)...)
+		commands = append(commands[:4], append([]splashCommand{{Name: "/agency bootstrap", Description: "start the office"}}, commands[4:]...)...)
 	}
 	return commands
 }
 
 func splashWordmark() string {
 	return strings.Join([]string{
-		" ________             ___                             ",
-		"/_  __/ /_  ___      /   | ____ ____  ____  _______  ",
-		" / / / __ \\/ _ \\    / /| |/ __ `/ _ \\/ __ \\/ ___/ /  ",
-		"/ / / / / /  __/   / ___ / /_/ /  __/ / / / /__/ /   ",
-		"/_/ /_/ /_/\\___/  /_/  |_\\__, /\\___/_/ /_/\\___/_/    ",
-		"                        /____/                        ",
+		"    ___    ______ ______ _   __ ______ __  __",
+		"   /   |  / ____// ____// | / // ____// / / /",
+		"  / /| | / / __ / __/  /  |/ // /    / /_/ / ",
+		" / ___ |/ /_/ // /___ / /|  // /___ / __  /  ",
+		"/_/  |_|\\____//_____//_/ |_/ \\____//_/ /_/   ",
 	}, "\n")
 }
 
 func splashVersion() string {
-	return fmt.Sprintf("[ the agency | teamcode runtime ]  %s", version.Version)
+	return fmt.Sprintf("[ local office / governed agents ]  %s", version.Version)
 }
 
 func splashModelLabel() string {
@@ -72,6 +74,90 @@ func splashModelLabel() string {
 
 	provider := strings.ToUpper(string(model.Provider[:1])) + string(model.Provider[1:])
 	return fmt.Sprintf("%s %s", provider, model.Name)
+}
+
+type providerEntry struct {
+	label  string
+	envKey string
+	local  bool
+}
+
+func splashProviderLines(width int) []string {
+	t := theme.CurrentTheme()
+	baseStyle := styles.BaseStyle()
+
+	entries := []providerEntry{
+		{label: "Codex", envKey: "", local: true}, // auth via ~/.codex/auth.json
+		{label: "Anthropic", envKey: "ANTHROPIC_API_KEY"},
+		{label: "OpenAI", envKey: "OPENAI_API_KEY"},
+		{label: "Gemini", envKey: "GEMINI_API_KEY"},
+		{label: "Ollama", envKey: "", local: true},
+	}
+
+	anyKey := false
+	lines := []string{
+		baseStyle.Foreground(t.TextMuted()).Bold(true).Width(width).Render("Providers"),
+	}
+	for _, e := range entries {
+		var icon, detail string
+		var fg lipgloss.TerminalColor
+		if e.local {
+			fg = t.TextMuted()
+			switch e.label {
+			case "Codex":
+				home, _ := os.UserHomeDir()
+				authFile := home + "/.codex/auth.json"
+				if data, err := os.ReadFile(authFile); err == nil && bytes.Contains(data, []byte("access_token")) {
+					icon = "✓"
+					detail = "ChatGPT OAuth  (~/.codex/auth.json)"
+					fg = t.Text()
+					anyKey = true
+				} else {
+					icon = "✗"
+					detail = "run: codex login"
+				}
+			case "Ollama":
+				icon = "◌"
+				ollamaModel := os.Getenv("OLLAMA_MODEL")
+				if ollamaModel == "" {
+					ollamaModel = "llama3.2"
+				}
+				detail = fmt.Sprintf("local — %s (ollama serve)", ollamaModel)
+			default:
+				icon = "◌"
+				detail = "local"
+			}
+		} else if strings.TrimSpace(os.Getenv(e.envKey)) != "" {
+			icon = "✓"
+			detail = e.envKey
+			if e.envKey == "OPENAI_API_KEY" {
+				model := os.Getenv("OPENAI_MODEL")
+				if model == "" {
+					model = "gpt-4o-mini"
+				}
+				detail = fmt.Sprintf("%s  model=%s", e.envKey, model)
+			}
+			fg = t.Text()
+			anyKey = true
+		} else {
+			icon = "✗"
+			detail = e.envKey
+			fg = t.TextMuted()
+		}
+		lines = append(lines, baseStyle.Foreground(fg).Width(width).Render(
+			fmt.Sprintf("  %s %-12s  %s", icon, e.label, detail),
+		))
+	}
+	if !anyKey {
+		lines = append(lines, "")
+		lines = append(lines, baseStyle.Foreground(t.Warning()).Width(width).Render(
+			"  No provider is ready yet",
+		))
+		lines = append(lines, baseStyle.Foreground(t.TextMuted()).Width(width).Render(
+			"  Run: scripts/setup  to connect one",
+		))
+	}
+	return lines
 }
 
 func splashState(overview AgencyOverview, width int) string {
@@ -117,20 +203,26 @@ func splashState(overview AgencyOverview, width int) string {
 		}
 	}
 
+	lines = append(lines, "")
+	lines = append(lines, splashProviderLines(width)...)
+
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-func renderSplash(appState *app.App, width, height int) string {
+func renderSplash(appState *app.App, activeSession session.Session, width, height int) string {
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 	overview := InspectAgencyOverview(appState)
 
 	logoStyle := baseStyle.
-		Foreground(t.Secondary()).
+		Foreground(t.Primary()).
 		Bold(true)
 	versionStyle := baseStyle.
 		Foreground(t.TextMuted()).
 		PaddingBottom(1)
+	brandLineStyle := baseStyle.
+		Foreground(t.Secondary()).
+		Bold(true)
 	commandStyle := baseStyle.Foreground(t.TextMuted())
 	commandNameStyle := baseStyle.Foreground(t.Text()).Bold(true)
 
@@ -146,7 +238,24 @@ func renderSplash(appState *app.App, width, height int) string {
 	intro := baseStyle.
 		Foreground(t.TextMuted()).
 		Align(lipgloss.Center).
-		Render("Solo constitution is preserved. Agency office controls reflect live runtime state.")
+		Render("Tell Agency what needs building, fixing, reviewing, or untangling. Use /agency when you want the staffed office, ledger, approvals, and scheduled roles.")
+
+	brandLine := brandLineStyle.
+		Align(lipgloss.Center).
+		Render("signal gold / relay cyan / ledger ink")
+
+	sessionStatus := ""
+	if activeSession.ID != "" {
+		label := activeSession.Title
+		if strings.TrimSpace(label) == "" {
+			label = "New Session"
+		}
+		sessionStatus = styles.BaseStyle().
+			Foreground(t.Primary()).
+			Bold(true).
+			Align(lipgloss.Center).
+			Render("Fresh session ready: " + label)
+	}
 
 	stateWidth := min(max(44, width/2), 74)
 	stateCard := styles.BaseStyle().
@@ -160,7 +269,9 @@ func renderSplash(appState *app.App, width, height int) string {
 		lipgloss.Center,
 		logoStyle.Render(splashWordmark()),
 		versionStyle.Render(splashVersion()),
+		brandLine,
 		intro,
+		sessionStatus,
 		"",
 		stateCard,
 		"",

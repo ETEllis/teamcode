@@ -65,6 +65,9 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 	}
 
 	handle := func(signal WakeSignal) error {
+		if shouldProcessActorSignal(spec.Identity.ID, signal) == false {
+			return nil
+		}
 		snapshot, err := ledger.LatestSnapshot(ctx, spec.Identity.OrganizationID)
 		if err != nil {
 			return err
@@ -171,10 +174,11 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 				inferResult, routeErr = adapter.Execute(ctx, inferReq)
 			}
 			if routeErr != nil {
-				// Graceful degrade: use prompter's default (no external call).
+				// Graceful degrade: surface the routing failure so the user sees it in
+				// the TUI bulletin rather than silently receiving "actor ready".
 				inferResult = InferenceResult{
-					Text:     "actor ready",
-					Provider: "default",
+					Text:     fmt.Sprintf("[no provider] %s\nSet ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or run: ollama serve", routeErr.Error()),
+					Provider: "none",
 					ModelID:  "none",
 				}
 				routeDecision.GateReason = routeErr.Error()
@@ -254,26 +258,26 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 							CreatedAt: proposals[i].ProposedAt,
 						}
 						_ = bus.Publish(ctx, orgSignal)
-						}
-
-						// Publish all proposals to the approval channel so the TUI can display pending actions.
-						approvalSignal := WakeSignal{
-							ID:             proposals[i].ID,
-							OrganizationID: proposals[i].OrganizationID,
-							ActorID:        proposals[i].ActorID,
-							Channel:        ApprovalChannel(proposals[i].OrganizationID),
-							Kind:           SignalReview,
-							Payload: map[string]string{
-								"proposalId":  proposals[i].ID,
-								"actorId":     proposals[i].ActorID,
-								"actionType":  string(proposals[i].Type),
-								"target":      proposals[i].Target,
-								"entrySource": "actor.daemon.approval",
-							},
-							CreatedAt: proposals[i].ProposedAt,
-						}
-						_ = bus.Publish(ctx, approvalSignal)
 					}
+
+					// Publish all proposals to the approval channel so the TUI can display pending actions.
+					approvalSignal := WakeSignal{
+						ID:             proposals[i].ID,
+						OrganizationID: proposals[i].OrganizationID,
+						ActorID:        proposals[i].ActorID,
+						Channel:        ApprovalChannel(proposals[i].OrganizationID),
+						Kind:           SignalReview,
+						Payload: map[string]string{
+							"proposalId":  proposals[i].ID,
+							"actorId":     proposals[i].ActorID,
+							"actionType":  string(proposals[i].Type),
+							"target":      proposals[i].Target,
+							"entrySource": "actor.daemon.approval",
+						},
+						CreatedAt: proposals[i].ProposedAt,
+					}
+					_ = bus.Publish(ctx, approvalSignal)
+				}
 				metadata["proposalCount"] = fmt.Sprintf("%d", len(proposals))
 			}
 		}
@@ -301,6 +305,20 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 			}
 		}
 	}
+}
+
+func shouldProcessActorSignal(actorID string, signal WakeSignal) bool {
+	switch signal.Kind {
+	case SignalBroadcast, SignalReview:
+		return false
+	}
+	if signal.ActorID == actorID {
+		switch signal.Payload["entrySource"] {
+		case "actor.daemon.broadcast", "actor.daemon.approval":
+			return false
+		}
+	}
+	return true
 }
 
 func loadActorSpecFromPath(path string) (ActorRuntimeSpec, error) {

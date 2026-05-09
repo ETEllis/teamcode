@@ -1,8 +1,100 @@
 {
-  "$schema": "./teamcode-schema.json",
+  "data": {},
   "lsp": {
     "gopls": {
-      "command": "gopls"
+      "enabled": false,
+      "command": "gopls",
+      "args": null,
+      "options": null
     }
-  }
+  },
+  "team": {
+    "activeTeam": "teamcode",
+    "defaultTemplate": "leader-led",
+    "defaultBlueprint": "software-team",
+    "collaborationHud": true
+  },
+  "agency": {
+    "enabled": true,
+    "productName": "Agency",
+    "currentConstitution": "full-agency",
+    "soloConstitution": "solo",
+    "office": {
+      "enabled": false,
+      "mode": "distributed-office",
+      "autoBoot": false,
+      "sharedWorkplace": ".teamcode/agency/shared_workplace",
+      "stateFile": ".teamcode/agency/office-state.json",
+      "defaultWorkspaceMode": "shared",
+      "allowSoloFallback": true
+    },
+    "docker": {
+      "enabled": false,
+      "composeProject": "agency",
+      "composeFile": "docker-compose.agency.yml",
+      "image": "ghcr.io/etellis/agency:latest",
+      "sharedVolume": "agency_shared_workplace",
+      "network": "agency_office"
+    },
+    "redis": {
+      "enabled": true,
+      "address": "127.0.0.1:6379",
+      "db": 7,
+      "channelPrefix": "agency"
+    },
+    "ledger": {
+      "backend": "append-only-log",
+      "path": ".teamcode/agency/ledger.log",
+      "snapshotPath": ".teamcode/agency/snapshots",
+      "consensusMode": "distributed-consensus",
+      "defaultQuorum": 2,
+      "projectionFile": ".teamcode/agency/context-snapshot.json"
+    },
+    "voice": {
+      "projection": {},
+      "stt": {},
+      "tts": {
+        "enabled": false,
+        "args": [
+          "--voice",
+          "{voice}",
+          "--output",
+          "{output}",
+          "--text",
+          "{text}"
+        ],
+        "inputMode": "text",
+        "outputMode": "file",
+        "language": "en",
+        "voice": "af_heart",
+        "audioFormat": "wav",
+        "timeout": "30s"
+      }
+    },
+    "schedules": {
+      "timezone": "local",
+      "defaultCadence": "weekday-office-hours",
+      "wakeOnOfficeOpen": true,
+      "requireShiftHandoff": true,
+      "windows": [
+        {
+          "name": "weekday-office-hours",
+          "days": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri"
+          ],
+          "start": "09:00",
+          "end": "17:00"
+        }
+      ]
+    },
+    "genesis": {}
+  },
+  "tui": {
+    "theme": "agency"
+  },
+  "shell": {}
 }

@@ -52,11 +52,12 @@ func LoadBootstrap(workingDir string, constitutionOverride string, runtimeMode R
 
 	bootstrap := Bootstrap{
 		Config: Config{
-			BaseDir:         baseDir,
-			WorkingDir:      workingDir,
-			SharedWorkplace: sharedWorkplace,
-			RuntimeMode:     runtimeMode,
-			ActorBinaryPath: actorBinary,
+			BaseDir:          baseDir,
+			WorkingDir:       workingDir,
+			SharedWorkplace:  sharedWorkplace,
+			RuntimeMode:      runtimeMode,
+			ActorBinaryPath:  actorBinary,
+			WakeOnOfficeOpen: boolValue(cfg.Agency.Schedules.WakeOnOfficeOpen),
 			Redis: &RedisConfig{
 				Addr:     redisAddr,
 				Password: redisPassword,

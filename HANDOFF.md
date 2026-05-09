@@ -1,21 +1,15 @@
 # Agency — Session Handoff
-> Written at ~95% context. Start a new session, read this file, say "go".
+> Written at context limit. Start a new session, read this file, say "go".
 
 ---
 
 ## What This Project Is
 
-**Agency** — terminal-first AI working organization. Binary: `teamcode`. Product: **Agency**. Your intent, multiplied. Each agent has a voice, a bubble, a distinct personality, and runs indefinitely on a schedule or one-off. Full architecture spec: `AGENCY_BLUEPRINT.md v3`.
+**Agency** — terminal-first AI working organization. Binary: `teamcode`. Product: **Agency**. "Your intent, multiplied."
 
-GitHub: `https://github.com/ETEllis/agency` (renamed from teamcode this session).
-
----
-
-## Repository
-
-```
-/Users/edwardellis/teamcode/
-```
+GitHub: `https://github.com/ETEllis/agency` (renamed from teamcode)
+Go module: `github.com/ETEllis/teamcode` — do NOT change import paths.
+Repo: `/Users/edwardellis/teamcode/`
 
 ```bash
 cd /Users/edwardellis/teamcode
@@ -24,138 +18,138 @@ go build ./...   # ✅
 go test ./...    # ✅
 ```
 
-Boot:
-```bash
-scripts/build-daemons && overmind start
-```
+---
+
+## Architecture (LOCKED — do not redesign)
+
+Full spec: `AGENCY_BLUEPRINT.md v3`
+
+Request chain: `WakeSignal → GISTAgentCore → ActionIntent → ModelRouter → ProviderAdapter → Result → Ledger`
 
 ---
 
-## What's Complete (all verified ✅)
+## Stage Progress — Implemented Surface
 
-### Stages 1–5 — Full Core Runtime
 | Stage | Summary |
 |-------|---------|
-| 1 | Voice (kokoro/say), DB poll scheduler, broadcast→TUI pipeline |
-| 2 | GIST cognitive layer: causal compression, ElasticStretch, LatticeStore |
-| 3 | Model routing: ModelRouter, CredentialBroker, 4 provider adapters |
-| 4 | TUI: iMessage bubbles, TTS voice, ApprovalCmp panel (a/r keys) |
-| 5 | NestedScheduler, PerformanceRecord, bulletin timeline, directive→GIST atom |
-
-### IPC Transport Layer ✅ (shipped this session)
-- `internal/agency/ipc.go` — `IPCServer`, newline-delimited JSON over Unix socket
-  - Handshake → subscribe to broadcast + approval + bulletin channels
-  - Fans out `IPCTypeBroadcast` / `IPCTypeApproval` / `IPCTypeBulletin` events
-  - Accepts `IPCTypeVote` from clients → relays as `SignalCorrection` on org channel
-  - `IPCSocketPath(baseDir, orgID)` = `{baseDir}/.agency/ipc-{orgID}.sock`
-- `internal/agency/cmd/ipc-server/main.go` — standalone daemon (env: `AGENCY_ORG_ID`, `AGENCY_BASE_DIR`, `AGENCY_REDIS_ADDR`)
-
-### Desktop App Scaffold ✅ (in progress — next session)
-- `desktop/Agency/Package.swift` — SwiftPM, macOS 14+
-- `desktop/Agency/Sources/Agency/Models.swift` — all domain types + IPC payload structs
-- `desktop/Agency/Sources/Agency/Services/AgencyConnection.swift` — `@MainActor ObservableObject`, NWConnection Unix socket client, auto-reconnect, full JSON decode pipeline
-- `desktop/Agency/Sources/Agency/AgencyApp.swift` — `@main`, `WindowGroup` + secondary `Window("Approvals")`
-- `desktop/Agency/Sources/Agency/Views/OfficeView.swift` — `NavigationSplitView`, sidebar with badge counts, `ConnectionBadge`
-- **MISSING** (next session): `BubbleListView.swift`, `ApprovalView.swift`, `BulletinView.swift`
+| 1 | Optional voice, DB scheduler, broadcast→TUI |
+| 2 | GIST cognitive layer |
+| 3 | ModelRouter, CredentialBroker, provider adapters |
+| 4 | TUI: iMessage bubbles, optional TTS, ApprovalCmp |
+| 5 | NestedScheduler, bulletin timeline, directive→GIST |
 
 ---
 
-## START HERE — Next Session Goal
+## THIS SESSION — What Was Built (2026-04-02)
 
-**Complete the macOS desktop app.** Three views remain:
+### Critical Bug Fixed: genesis→actor-spawn bridge was missing
+After `/agency genesis`, `GenesisRoleBundle[]` were saved to `office-state.json` but never converted into `ActorRuntimeSpec` files. The runtime daemon found nothing to spawn. This was the core V1 blocker.
+
+**Fix implemented:**
+- `internal/app/agency.go` — added `writeActorSpecsLocked()` + `ManifestActors()`. `StartGenesis` now auto-calls manifest after saving state. Writes actor spec JSON to `{baseDir}/runtime/actors/{id}.json`. Added `ManifestCount int` to `AgencyGenesisResult`.
+- `cmd/agency.go` — added `/agency bootstrap` as the canonical re-manifest command (legacy `/office bootstrap` alias preserved). Updated genesis output to show actor count + "Start the runtime" instructions.
+- `scripts/build-daemons` — now builds `dist/agency-ipc-server`
+- `Procfile` — added `ipc: ./dist/agency-ipc-server`
+- `scripts/test-ipc` — smoke test: builds ipc-server, starts it, connects nc client, publishes 3 Redis events, verifies all 3 message types received. Requires Redis.
+
+### First-Run UX Overhaul
+- `internal/tui/components/chat/splash.go` — provider status panel on splash showing all 5 providers with check/cross/status. Codex shows auth.json state. OpenAI shows active OPENAI_MODEL. Warning shown if nothing configured.
+- `internal/tui/page/chat.go` + `internal/tui/tui.go` — error messages now actionable with specific env vars + "run: scripts/setup"
+- `internal/agency/daemon_actor.go` — routing failure now broadcasts `"[no provider] ..."` instead of silent `"actor ready"`
+
+### Codex CLI OAuth Adapter (NEW)
+- `internal/agency/provider_codex.go` — `CodexCLIAdapter`: checks `codex` binary + `~/.codex/auth.json`, runs `codex exec --json --sandbox read-only "<prompt>"` by default, parses OpenAI Responses API JSONL event stream. Unsafe unsandboxed developer mode requires explicit `AGENCY_CODEX_UNSANDBOXED=true`.
+- `internal/agency/adapters.go` — Codex added first in `defaultProviderAdapters()` (highest priority when available)
+- `internal/agency/routing.go` — "codex" added to credential broker probes (empty envKey, like Ollama — `Available()` does real check)
+
+### Setup Script
+- `scripts/setup` — interactive first-run: checks/installs deps (go, redis, overmind), 6 provider options:
+  1. **Codex** — installs `@openai/codex` npm, runs `codex login` (browser OAuth)
+  2. Anthropic — saves `ANTHROPIC_API_KEY` to `.env`
+  3. OpenAI — saves `OPENAI_API_KEY` + `OPENAI_MODEL` to `.env`
+  4. Gemini — saves `GEMINI_API_KEY` to `.env`
+  5. Ollama — checks install, optionally pulls llama3.2
+  6. Skip
+  Builds all binaries. Prints exact launch commands.
+
+---
+
+## Current State: Terminal Release Candidate
+
+The default release path is local Redis + Overmind + daemons, not Docker.
+Docker Compose remains optional packaging/parity work. Voice is optional and
+must not block the terminal release.
+
+Verified in the release loop:
+
+- `scripts/release-smoke` static gates pass.
+- `go test ./...` passes.
+- `go build -o agency .` passes.
+- `scripts/build-daemons` builds office, runtime, scheduler, actor, and IPC binaries.
+- `./agency agency services --json` reports Docker disabled by default.
+- Codex CLI uses read-only sandbox args by default; unsafe bypass requires `AGENCY_CODEX_UNSANDBOXED=true`.
+
+Live gates passed from a normal Terminal session:
+
+```bash
+scripts/live-release-proof --log-dir .tmp/release-proof-terminal-attempt
+scripts/verify-release-proof .tmp/release-proof-terminal-attempt
+```
+
+For a fresh evidence bundle, rerun `scripts/live-release-proof --log-dir
+.tmp/release-proof`.
+
+---
+
+## After Terminal Runtime Is Confirmed → Swift Desktop
+
+Three views remain to implement. The desktop lane is intentionally next-phase
+work and should not be treated as release-blocking until these views compile.
+
+**Location:** `desktop/Agency/Sources/Agency/Views/`
 
 ### 1. `BubbleListView.swift`
-iMessage-style broadcast bubbles. Mirrors TUI `renderBroadcastBubble` in Swift.
-
-Key data: `connection.broadcasts: [BroadcastMessage]` — each has `.actorID`, `.message`, `.createdAt`, `.initials`, `.roleColor`
-
-Design:
-- `ScrollViewReader` + `ScrollView`, auto-scroll to bottom on new message
-- Each bubble: colored avatar circle (`.roleColor`) + actor name + timestamp header, message bubble with left thick border in matching color
-- Map `RoleColor` cases → SwiftUI `Color` (blue, purple, teal, green, orange, pink)
-- Empty state: "Waiting for office signals…" with a muted pulse animation
+- `ScrollViewReader` auto-scroll on `connection.broadcasts` change
+- Avatar: colored `Circle` (28pt) with 2-letter initials from `.initials`
+- Left accent bar (3pt) in `roleColor` → SwiftUI Color map: `.blue/.purple/.teal/.green/.orange/.pink`
+- Actor name + relative timestamp header row
+- Empty state: `ContentUnavailableView("Waiting for signals", systemImage: "bubble.left")`
+- Data: `connection.broadcasts: [BroadcastMessage]` — `.actorID`, `.message`, `.createdAt`, `.initials`, `.roleColor`
 
 ### 2. `ApprovalView.swift`
-Pending proposal list. Key data: `connection.approvals: [ApprovalItem]`
-
-Each row: actor name, action type → target, timestamp. Trailing swipe actions: approve (green checkmark) / reject (red x). Also keyboard: selected row, `return` = approve, `delete` = reject.
-
-Calls: `connection.sendVote(proposalID: ..., approved: true/false)`
-
-Empty state: "No pending approvals" with shield SF symbol.
+- `List` with keyboard focus for `return`=approve, `delete`=reject
+- `.swipeActions(edge: .trailing)` — green Approve + red Reject
+- Calls `connection.sendVote(proposalID: item.proposalID, approved: true/false)`
+- Empty state: `ContentUnavailableView("No Pending Approvals", systemImage: "checkmark.shield")`
+- Data: `connection.approvals: [ApprovalItem]` — `.proposalID`, `.actorID`, `.actionType`, `.target`, `.createdAt`
 
 ### 3. `BulletinView.swift`
-Performance timeline. Key data: `connection.bulletins: [BulletinEntry]`
+- Actor name + provider/model tag right-aligned + timestamp
+- Directive in italic `.caption` with left accent
+- Output `.lineLimit(2).truncationMode(.tail)`
+- Score badge: `"%.0f%%" * entry.score * 100`, color from `entry.scoreColor` (`.good`→green, `.fair`→yellow, `.poor`→red)
+- Empty state: `ContentUnavailableView("No Performance Records", systemImage: "chart.bar.doc.horizontal")`
+- Data: `connection.bulletins: [BulletinEntry]` — `.actorID`, `.directive`, `.output`, `.score`, `.provider`, `.modelID`, `.createdAt`, `.scoreColor`
 
-Each row:
-- Actor name + provider/model tag (muted, right-aligned) + timestamp
-- Directive line in italic muted text
-- Output text (truncated to 2 lines)
-- Score badge: `String(format: "%.0f%%", entry.score * 100)`, color from `entry.scoreColor` (`.good` → green, `.fair` → yellow, `.poor` → red)
+### Swift compile check
+```bash
+cd desktop/Agency && swift build
+```
 
-Empty state: "No performance records yet."
-
----
-
-## Wiring It All Up
-
-After the three views are written:
-
-1. **Add `ipc-server` to `Procfile`**:
-   ```
-   ipc: ./bin/ipc-server
-   ```
-
-2. **Add `ipc-server` to `scripts/build-daemons`**:
+### Desktop wiring after views are done
+1. `AgencyApp.swift` already opens secondary Approvals window when `!connection.approvals.isEmpty`
+2. Set env vars before launching:
    ```bash
-   go build -o bin/ipc-server ./internal/agency/cmd/ipc-server
-   ```
-
-3. **SwiftUI app environment** — set these before launching:
-   ```bash
-   export AGENCY_ORG_ID=<your-org-id>
+   export AGENCY_ORG_ID=<org-id>
    export AGENCY_BASE_DIR=/Users/edwardellis/teamcode
    ```
-   Or pass via Xcode scheme environment variables.
-
-4. **Xcode project** — open `desktop/Agency/` as a SwiftPM package (`File → Open → desktop/Agency`) then add a macOS App target that depends on the Agency package target. OR: use the existing `Package.swift` directly (swift run works for dev, Xcode needed for signed .app).
+3. Socket path: `{AGENCY_BASE_DIR}/.agency/ipc-{AGENCY_ORG_ID}.sock`
 
 ---
 
-## Testing Without Xcode Right Now
+## After Swift Desktop → WebSocket Transport → iPad
 
-You don't need the desktop app to test the runtime. Run the TUI:
-
-```bash
-# Terminal 1 — start Redis (if not running)
-redis-server
-
-# Terminal 2 — set API key, boot office
-export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY, or start Ollama
-scripts/build-daemons
-overmind start
-
-# In the TUI:
-/agency genesis          # → describe what you want the org to do
-/agency bootstrap        # → spins up actors per constitution
-```
-
-Watch agents wake on schedule → GIST compress → route to model → broadcast their output. Approval panel auto-shows when proposals arrive. Bulletin entries stream in after each inference cycle.
-
-**To test IPC manually:**
-```bash
-# Build IPC server
-go build -o bin/ipc-server ./internal/agency/cmd/ipc-server
-
-# Run it (in background)
-AGENCY_ORG_ID=your-org AGENCY_BASE_DIR=. AGENCY_REDIS_ADDR=localhost:6379 ./bin/ipc-server &
-
-# Connect via nc
-nc -U .agency/ipc-your-org.sock
-# Then paste (one line):
-{"type":"handshake","payload":{"orgId":"your-org","clientType":"cli"}}
-# Events stream back as newline-delimited JSON
-```
+Per blueprint: item 29 = WebSocket transport, item 31 = iPad companion app.
 
 ---
 
@@ -165,24 +159,30 @@ nc -U .agency/ipc-your-org.sock
 |------|------|
 | `internal/agency/daemon_actor.go` | Actor main loop — full pipeline |
 | `internal/agency/ipc.go` | Unix socket IPC server |
-| `internal/agency/nested_scheduler.go` | Schedule tree with prompt injection |
-| `internal/agency/performance.go` | PerformanceRecord + BulletinChannel |
-| `internal/agency/routing.go` | ModelRouter + CredentialBroker |
-| `internal/tui/components/chat/approval.go` | TUI approval panel |
-| `internal/tui/components/chat/bulletin.go` | TUI bulletin renderer |
-| `internal/app/agency.go` | AgencyService — all subscriptions + votes |
+| `internal/agency/routing.go` | ModelRouter + CredentialBroker (5 providers incl. Codex) |
+| `internal/agency/provider_codex.go` | Codex CLI OAuth adapter — NEW |
+| `internal/agency/adapters.go` | defaultProviderAdapters() list |
+| `internal/app/agency.go` | AgencyService — genesis, ManifestActors, subscriptions |
+| `internal/tui/components/chat/splash.go` | Provider status panel on splash |
+| `cmd/agency.go` | /agency genesis, /agency bootstrap commands (legacy /office alias hidden) |
+| `scripts/setup` | First-run setup script — deps + provider + build |
+| `scripts/test-ipc` | IPC smoke test |
+| `scripts/build-daemons` | Builds all 5 daemons incl. ipc-server |
+| `Procfile` | 5 processes: redis, office, runtime, scheduler, ipc |
 | `desktop/Agency/Sources/Agency/Services/AgencyConnection.swift` | macOS IPC client |
 | `desktop/Agency/Sources/Agency/Views/OfficeView.swift` | Main window + sidebar |
-| `AGENCY_BLUEPRINT.md` | Architecture reference (canonical) |
+| `.planning/config.json` | Disables context monitor hook — do not delete |
 
 ---
 
 ## Notes for Next Claude
 
 - `defaultMode: "dontAsk"` in `~/.claude/settings.json` — Write/Edit/Bash all auto-approved.
-- `.planning/config.json` disables context monitor hook (prevents 10s freezes). Do not delete.
-- Go module path is still `github.com/ETEllis/teamcode` — do NOT change imports. The binary/module name doesn't need to match the GitHub repo name.
-- The desktop app uses `NWConnection` (Network framework) for Unix socket — no third-party deps needed.
-- `RoleColor` in `Models.swift` maps to SwiftUI colors in `BubbleListView` — make sure the mapping uses the same deterministic hash as Go's `actorColor()` in `list.go`.
-- After desktop views are complete, the next phase per blueprint is **WebSocket transport** (item 29) for iPad companion, then **iPad app** (item 31).
+- `.planning/config.json` disables context monitor hook. Do not delete.
+- Go module path is `github.com/ETEllis/teamcode` — do NOT change imports.
+- Desktop uses `NWConnection` (Network.framework) for Unix socket — no third-party deps.
+- `RoleColor` in `Models.swift` maps to SwiftUI colors in `BubbleListView` — use same deterministic hash as Go's `actorColor()` in `list.go`.
+- Codex adapter reads `~/.codex/auth.json` — token refresh is handled automatically by Codex CLI on next `codex exec` call.
+- The `.env` file in project root is auto-loaded by overmind. For `./teamcode` (TUI), user must `source .env` or add to shell profile.
 - Do NOT redesign. Blueprint v3 is final. Execute the plan.
+- **Next session start:** Verify V1 terminal works end-to-end before touching Swift.

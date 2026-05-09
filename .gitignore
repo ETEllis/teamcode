@@ -36,6 +36,19 @@ Thumbs.db
 # Binary output directory
 /bin/
 /dist/
+/agency
+/desktop/Agency/.build/
+
+# Local scratch/cache output
+/.tmp/
+
+# Local agent/planning traces; keep public release commits intentional
+/.omx/
+/task_plan.md
+/findings.md
+/progress.md
+/guardrails.md
+/prd.json
 
 # Local environment variables
 .env

@@ -12,86 +12,87 @@
         "model": {
           "description": "Model ID for the agent",
           "enum": [
-            "claude-3.5-haiku",
-            "claude-3-opus",
-            "gpt-4.1-mini",
-            "meta-llama/llama-4-maverick-17b-128e-instruct",
-            "openrouter.claude-3.5-haiku",
-            "openrouter.deepseek-r1-free",
-            "copilot.o4-mini",
-            "copilot.gpt-4",
-            "openrouter.gpt-4.1-mini",
-            "openrouter.o3-mini",
-            "openrouter.o4-mini",
-            "openrouter.gemini-2.5",
-            "o1-mini",
-            "o3",
-            "azure.o1",
-            "azure.gpt-4o-mini",
-            "bedrock.claude-3.7-sonnet",
             "claude-3.7-sonnet",
-            "gemini-2.5",
-            "openrouter.o1",
-            "copilot.o1",
-            "copilot.gpt-4o-mini",
-            "copilot.claude-3.7-sonnet-thought",
-            "meta-llama/llama-4-scout-17b-16e-instruct",
-            "azure.o3-mini",
-            "openrouter.claude-3-opus",
-            "grok-3-mini-beta",
-            "copilot.gpt-4.1",
-            "copilot.claude-3.7-sonnet",
-            "o1-pro",
-            "gemini-2.0-flash",
-            "azure.gpt-4.1",
-            "openrouter.o1-pro",
-            "gemini-2.0-flash-lite",
-            "o4-mini",
-            "azure.gpt-4.1-mini",
-            "openrouter.claude-3-haiku",
-            "openrouter.gpt-4.1-nano",
-            "openrouter.gpt-4o-mini",
-            "claude-3-haiku",
-            "o1",
-            "o3-mini",
-            "openrouter.claude-3.5-sonnet",
-            "openrouter.o1-mini",
-            "openrouter.o3",
+            "gpt-4.5-preview",
             "openrouter.claude-3.7-sonnet",
-            "claude-3.5-sonnet",
-            "openrouter.gpt-4o",
-            "grok-3-beta",
-            "openrouter.gpt-4.1",
-            "llama-3.3-70b-versatile",
-            "claude-4-opus",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "deepseek-r1-distill-llama-70b",
-            "azure.gpt-4.5-preview",
+            "openrouter.claude-3-haiku",
+            "copilot.claude-3.5-sonnet",
+            "claude-3-opus",
+            "gemini-2.0-flash-lite",
+            "azure.gpt-4o-mini",
+            "openrouter.deepseek-r1-free",
+            "openrouter.o3",
+            "openrouter.claude-3-opus",
+            "openrouter.gpt-4.5-preview",
+            "copilot.o1",
+            "gemini-2.0-flash",
+            "meta-llama/llama-4-maverick-17b-128e-instruct",
+            "grok-3-mini-fast-beta",
+            "copilot.gpt-4",
+            "copilot.gpt-4o",
             "azure.gpt-4o",
-            "claude-4-sonnet",
-            "qwen-qwq",
-            "azure.o4-mini",
+            "openrouter.gpt-4.1-nano",
+            "copilot.gemini-2.0-flash",
+            "bedrock.claude-3.7-sonnet",
+            "gemini-2.5",
+            "azure.o3",
+            "azure.gpt-4.1-mini",
+            "openrouter.o1",
+            "claude-3-haiku",
+            "openrouter.gpt-4o-mini",
             "grok-3-fast-beta",
             "copilot.o3-mini",
-            "copilot.gpt-4o",
-            "copilot.claude-sonnet-4",
-            "copilot.gemini-2.5-pro",
-            "azure.gpt-4.1-nano",
-            "openrouter.gemini-2.5-flash",
-            "grok-3-mini-fast-beta",
-            "gpt-4.1-nano",
-            "vertexai.gemini-2.5-flash",
-            "vertexai.gemini-2.5",
-            "copilot.gpt-3.5-turbo",
-            "gpt-4.5-preview",
-            "gpt-4.1",
-            "azure.o1-mini",
-            "azure.o3",
-            "openrouter.gpt-4.5-preview",
-            "copilot.gemini-2.0-flash",
+            "copilot.claude-3.7-sonnet",
             "gemini-2.5-flash",
-            "copilot.claude-3.5-sonnet"
+            "openrouter.gemini-2.5",
+            "codex-cli",
+            "claude-4-opus",
+            "meta-llama/llama-4-scout-17b-16e-instruct",
+            "openrouter.gpt-4.1",
+            "claude-3.5-haiku",
+            "gpt-4o",
+            "azure.gpt-4.1-nano",
+            "openrouter.claude-3.5-haiku",
+            "openrouter.o1-mini",
+            "copilot.gpt-4.1",
+            "azure.o1-mini",
+            "copilot.gpt-4o-mini",
+            "gpt-4o-mini",
+            "qwen-qwq",
+            "azure.o3-mini",
+            "azure.o4-mini",
+            "openrouter.o1-pro",
+            "azure.gpt-4.5-preview",
+            "openrouter.o4-mini",
+            "openrouter.claude-3.5-sonnet",
+            "grok-3-beta",
+            "vertexai.gemini-2.5-flash",
+            "claude-4-sonnet",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "o3-mini",
+            "openrouter.gpt-4o",
+            "copilot.gemini-2.5-pro",
+            "gpt-4.1-nano",
+            "o1-mini",
+            "o3",
+            "o4-mini",
+            "openrouter.o3-mini",
+            "copilot.o4-mini",
+            "o1-pro",
+            "llama-3.3-70b-versatile",
+            "deepseek-r1-distill-llama-70b",
+            "azure.o1",
+            "openrouter.gpt-4.1-mini",
+            "openrouter.gemini-2.5-flash",
+            "grok-3-mini-beta",
+            "vertexai.gemini-2.5",
+            "claude-3.5-sonnet",
+            "o1",
+            "azure.gpt-4.1",
+            "copilot.gpt-3.5-turbo",
+            "copilot.claude-sonnet-4",
+            "copilot.claude-3.7-sonnet-thought"
           ],
           "type": "string"
         },
@@ -111,8 +112,275 @@
       "type": "object"
     }
   },
-  "description": "Configuration schema for the TeamCode application",
+  "description": "Configuration schema for the Agency application",
   "properties": {
+    "agency": {
+      "description": "Agency office and runtime configuration",
+      "properties": {
+        "constitutions": {
+          "additionalProperties": {
+            "properties": {
+              "blueprint": {
+                "type": "string"
+              },
+              "defaultSchedule": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "entryMode": {
+                "type": "string"
+              },
+              "governance": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "policies": {
+                "properties": {
+                  "consensusMode": {
+                    "type": "string"
+                  },
+                  "defaultQuorum": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "publicationPolicy": {
+                    "type": "string"
+                  },
+                  "spawnMode": {
+                    "type": "string"
+                  },
+                  "wakeMode": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "runtimeMode": {
+                "type": "string"
+              },
+              "teamTemplate": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "description": "Named constitutions that unify solo compatibility behavior and Agency office behavior",
+          "type": "object"
+        },
+        "currentConstitution": {
+          "default": "coding-office",
+          "description": "Currently selected constitution for Agency product paths",
+          "type": "string"
+        },
+        "docker": {
+          "description": "Docker topology settings for the shared office runtime",
+          "properties": {
+            "composeFile": {
+              "type": "string"
+            },
+            "composeProject": {
+              "type": "string"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "image": {
+              "type": "string"
+            },
+            "network": {
+              "type": "string"
+            },
+            "sharedVolume": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Whether Agency office features should be considered active for product surfaces",
+          "type": "boolean"
+        },
+        "genesis": {
+          "description": "Genesis defaults for intent-driven organization creation",
+          "properties": {
+            "autoResearch": {
+              "default": true,
+              "type": "boolean"
+            },
+            "autoSkills": {
+              "default": true,
+              "type": "boolean"
+            },
+            "autoToolBinding": {
+              "default": true,
+              "type": "boolean"
+            },
+            "conversationDriven": {
+              "default": true,
+              "type": "boolean"
+            },
+            "defaultTopology": {
+              "default": "hierarchical",
+              "type": "string"
+            },
+            "sequentialSpawn": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "ledger": {
+          "description": "Append-only ledger and context projection settings",
+          "properties": {
+            "backend": {
+              "default": "append-only-log",
+              "type": "string"
+            },
+            "consensusMode": {
+              "default": "distributed-consensus",
+              "type": "string"
+            },
+            "defaultQuorum": {
+              "default": 2,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            },
+            "projectionFile": {
+              "type": "string"
+            },
+            "snapshotPath": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "office": {
+          "description": "Shared office runtime settings",
+          "properties": {
+            "allowSoloFallback": {
+              "default": true,
+              "type": "boolean"
+            },
+            "autoBoot": {
+              "default": false,
+              "type": "boolean"
+            },
+            "defaultWorkspaceMode": {
+              "default": "shared",
+              "description": "Default workspace mode for agents in the office",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "mode": {
+              "default": "distributed-office",
+              "description": "Office runtime mode",
+              "type": "string"
+            },
+            "sharedWorkplace": {
+              "description": "Shared office filesystem root for Agency",
+              "type": "string"
+            },
+            "stateFile": {
+              "description": "Persistent file storing office runtime status across CLI invocations",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "productName": {
+          "default": "The Agency",
+          "description": "Public-facing product identity for the runtime",
+          "type": "string"
+        },
+        "redis": {
+          "description": "Redis event bus settings for the Agency office",
+          "properties": {
+            "address": {
+              "default": "127.0.0.1:6379",
+              "type": "string"
+            },
+            "channelPrefix": {
+              "default": "agency",
+              "type": "string"
+            },
+            "db": {
+              "default": 7,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "schedules": {
+          "description": "Office-hour and shift defaults for persistent organizations",
+          "properties": {
+            "defaultCadence": {
+              "default": "weekday-office-hours",
+              "type": "string"
+            },
+            "requireShiftHandoff": {
+              "default": true,
+              "type": "boolean"
+            },
+            "timezone": {
+              "default": "local",
+              "type": "string"
+            },
+            "wakeOnOfficeOpen": {
+              "default": true,
+              "type": "boolean"
+            },
+            "windows": {
+              "items": {
+                "properties": {
+                  "days": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "end": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "soloConstitution": {
+          "default": "solo",
+          "description": "Constitution that preserves the solo compatibility workflow",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "agents": {
       "additionalProperties": {
         "description": "Agent configuration",
@@ -125,86 +393,87 @@
           "model": {
             "description": "Model ID for the agent",
             "enum": [
-              "claude-3.5-haiku",
-              "claude-3-opus",
-              "gpt-4.1-mini",
-              "meta-llama/llama-4-maverick-17b-128e-instruct",
-              "openrouter.claude-3.5-haiku",
-              "openrouter.deepseek-r1-free",
-              "copilot.o4-mini",
-              "copilot.gpt-4",
-              "openrouter.gpt-4.1-mini",
-              "openrouter.o3-mini",
-              "openrouter.o4-mini",
-              "openrouter.gemini-2.5",
-              "o1-mini",
-              "o3",
-              "azure.o1",
-              "azure.gpt-4o-mini",
-              "bedrock.claude-3.7-sonnet",
               "claude-3.7-sonnet",
-              "gemini-2.5",
-              "openrouter.o1",
-              "copilot.o1",
-              "copilot.gpt-4o-mini",
-              "copilot.claude-3.7-sonnet-thought",
-              "meta-llama/llama-4-scout-17b-16e-instruct",
-              "azure.o3-mini",
-              "openrouter.claude-3-opus",
-              "grok-3-mini-beta",
-              "copilot.gpt-4.1",
-              "copilot.claude-3.7-sonnet",
-              "o1-pro",
-              "gemini-2.0-flash",
-              "azure.gpt-4.1",
-              "openrouter.o1-pro",
-              "gemini-2.0-flash-lite",
-              "o4-mini",
-              "azure.gpt-4.1-mini",
-              "openrouter.claude-3-haiku",
-              "openrouter.gpt-4.1-nano",
-              "openrouter.gpt-4o-mini",
-              "claude-3-haiku",
-              "o1",
-              "o3-mini",
-              "openrouter.claude-3.5-sonnet",
-              "openrouter.o1-mini",
-              "openrouter.o3",
+              "gpt-4.5-preview",
               "openrouter.claude-3.7-sonnet",
-              "claude-3.5-sonnet",
-              "openrouter.gpt-4o",
-              "grok-3-beta",
-              "openrouter.gpt-4.1",
-              "llama-3.3-70b-versatile",
-              "claude-4-opus",
-              "gpt-4o",
-              "gpt-4o-mini",
-              "deepseek-r1-distill-llama-70b",
-              "azure.gpt-4.5-preview",
+              "openrouter.claude-3-haiku",
+              "copilot.claude-3.5-sonnet",
+              "claude-3-opus",
+              "gemini-2.0-flash-lite",
+              "azure.gpt-4o-mini",
+              "openrouter.deepseek-r1-free",
+              "openrouter.o3",
+              "openrouter.claude-3-opus",
+              "openrouter.gpt-4.5-preview",
+              "copilot.o1",
+              "gemini-2.0-flash",
+              "meta-llama/llama-4-maverick-17b-128e-instruct",
+              "grok-3-mini-fast-beta",
+              "copilot.gpt-4",
+              "copilot.gpt-4o",
               "azure.gpt-4o",
-              "claude-4-sonnet",
-              "qwen-qwq",
-              "azure.o4-mini",
+              "openrouter.gpt-4.1-nano",
+              "copilot.gemini-2.0-flash",
+              "bedrock.claude-3.7-sonnet",
+              "gemini-2.5",
+              "azure.o3",
+              "azure.gpt-4.1-mini",
+              "openrouter.o1",
+              "claude-3-haiku",
+              "openrouter.gpt-4o-mini",
               "grok-3-fast-beta",
               "copilot.o3-mini",
-              "copilot.gpt-4o",
-              "copilot.claude-sonnet-4",
-              "copilot.gemini-2.5-pro",
-              "azure.gpt-4.1-nano",
-              "openrouter.gemini-2.5-flash",
-              "grok-3-mini-fast-beta",
-              "gpt-4.1-nano",
-              "vertexai.gemini-2.5-flash",
-              "vertexai.gemini-2.5",
-              "copilot.gpt-3.5-turbo",
-              "gpt-4.5-preview",
-              "gpt-4.1",
-              "azure.o1-mini",
-              "azure.o3",
-              "openrouter.gpt-4.5-preview",
-              "copilot.gemini-2.0-flash",
+              "copilot.claude-3.7-sonnet",
               "gemini-2.5-flash",
-              "copilot.claude-3.5-sonnet"
+              "openrouter.gemini-2.5",
+              "codex-cli",
+              "claude-4-opus",
+              "meta-llama/llama-4-scout-17b-16e-instruct",
+              "openrouter.gpt-4.1",
+              "claude-3.5-haiku",
+              "gpt-4o",
+              "azure.gpt-4.1-nano",
+              "openrouter.claude-3.5-haiku",
+              "openrouter.o1-mini",
+              "copilot.gpt-4.1",
+              "azure.o1-mini",
+              "copilot.gpt-4o-mini",
+              "gpt-4o-mini",
+              "qwen-qwq",
+              "azure.o3-mini",
+              "azure.o4-mini",
+              "openrouter.o1-pro",
+              "azure.gpt-4.5-preview",
+              "openrouter.o4-mini",
+              "openrouter.claude-3.5-sonnet",
+              "grok-3-beta",
+              "vertexai.gemini-2.5-flash",
+              "claude-4-sonnet",
+              "gpt-4.1",
+              "gpt-4.1-mini",
+              "o3-mini",
+              "openrouter.gpt-4o",
+              "copilot.gemini-2.5-pro",
+              "gpt-4.1-nano",
+              "o1-mini",
+              "o3",
+              "o4-mini",
+              "openrouter.o3-mini",
+              "copilot.o4-mini",
+              "o1-pro",
+              "llama-3.3-70b-versatile",
+              "deepseek-r1-distill-llama-70b",
+              "azure.o1",
+              "openrouter.gpt-4.1-mini",
+              "openrouter.gemini-2.5-flash",
+              "grok-3-mini-beta",
+              "vertexai.gemini-2.5",
+              "claude-3.5-sonnet",
+              "o1",
+              "azure.gpt-4.1",
+              "copilot.gpt-3.5-turbo",
+              "copilot.claude-sonnet-4",
+              "copilot.claude-3.7-sonnet-thought"
             ],
             "type": "string"
           },
@@ -242,6 +511,10 @@
         ".github/copilot-instructions.md",
         ".cursorrules",
         ".cursor/rules/",
+        "agency.md",
+        "agency.local.md",
+        "Agency.md",
+        "Agency.local.md",
         "CLAUDE.md",
         "CLAUDE.local.md",
         "teamcode.md",
@@ -402,6 +675,159 @@
       "description": "LLM provider configurations",
       "type": "object"
     },
+    "team": {
+      "description": "Collaboration templates and team orchestration defaults",
+      "properties": {
+        "activeTeam": {
+          "description": "Preferred active team name for the UI and built-in team commands",
+          "type": "string"
+        },
+        "blueprints": {
+          "additionalProperties": {
+            "type": "object"
+          },
+          "description": "Agency blueprint definitions layered on top of the team template system",
+          "type": "object"
+        },
+        "collaborationHud": {
+          "default": true,
+          "description": "Whether to show the collaboration HUD in the sidebar",
+          "type": "boolean"
+        },
+        "defaultBlueprint": {
+          "default": "software-team",
+          "description": "Default Agency blueprint used when loading the coding-office constitution",
+          "type": "string"
+        },
+        "defaultTemplate": {
+          "default": "leader-led",
+          "description": "Default team template used by bootstrap flows",
+          "type": "string"
+        },
+        "templates": {
+          "additionalProperties": {
+            "properties": {
+              "description": {
+                "description": "Short summary of the workflow",
+                "type": "string"
+              },
+              "leadershipMode": {
+                "description": "Leadership style, for example solo, leader-led, peer, or custom",
+                "type": "string"
+              },
+              "name": {
+                "description": "Template display name",
+                "type": "string"
+              },
+              "policies": {
+                "description": "Working agreement and routing defaults",
+                "properties": {
+                  "allowsBroadcasts": {
+                    "type": "boolean"
+                  },
+                  "allowsPeerMessaging": {
+                    "type": "boolean"
+                  },
+                  "allowsSubagents": {
+                    "type": "boolean"
+                  },
+                  "commitMessageFormat": {
+                    "type": "string"
+                  },
+                  "concurrencyBudget": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "delegationMode": {
+                    "type": "string"
+                  },
+                  "handoffRequires": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "localChatDefault": {
+                    "type": "string"
+                  },
+                  "loopStrategy": {
+                    "type": "string"
+                  },
+                  "maxWip": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "requiredGates": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "reviewRequired": {
+                    "type": "boolean"
+                  },
+                  "reviewRouting": {
+                    "type": "string"
+                  },
+                  "synthesisRouting": {
+                    "type": "string"
+                  },
+                  "workspaceModeDefault": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "roles": {
+                "description": "Ordered role definitions for the template",
+                "items": {
+                  "properties": {
+                    "canSpawnSubagents": {
+                      "type": "boolean"
+                    },
+                    "currentFocus": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "enum": [
+                        "coder",
+                        "task"
+                      ],
+                      "type": "string"
+                    },
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "reportsTo": {
+                      "type": "string"
+                    },
+                    "responsible": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "spawnTeammates": {
+                "description": "Whether bootstrap should spawn teammate sessions immediately",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "description": "User-defined or overridden collaboration templates",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "tui": {
       "description": "Terminal User Interface configuration",
       "properties": {
@@ -430,6 +856,6 @@
       "type": "string"
     }
   },
-  "title": "TeamCode Configuration",
+  "title": "Agency Configuration",
   "type": "object"
 }

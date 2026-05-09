@@ -137,7 +137,7 @@ func DefaultAgencyConfig(teamCfg TeamConfig, dataDir string) AgencyConfig {
 	constitutions := map[string]AgencyConstitution{
 		"solo": {
 			Name:            "solo",
-			Description:     "Preserved solo coding constitution using the existing TeamCode/OpenCode-derived flow.",
+			Description:     "Preserved solo coding constitution using the existing compatibility-first solo flow.",
 			Blueprint:       "solo",
 			TeamTemplate:    "solo",
 			Governance:      "solo",
@@ -230,7 +230,7 @@ func DefaultAgencyConfig(teamCfg TeamConfig, dataDir string) AgencyConfig {
 			AllowSoloFallback:    boolPtr(true),
 		},
 		Docker: DockerRuntimeConfig{
-			Enabled:        boolPtr(true),
+			Enabled:        boolPtr(false),
 			ComposeProject: "the-agency",
 			ComposeFile:    "docker-compose.agency.yml",
 			Image:          "ghcr.io/etellis/the-agency:latest",

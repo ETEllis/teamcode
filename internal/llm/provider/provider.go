@@ -89,6 +89,11 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 		o(&clientOptions)
 	}
 	switch providerName {
+	case models.ProviderCodex:
+		return &baseProvider[CodexClient]{
+			options: clientOptions,
+			client:  newCodexClient(clientOptions),
+		}, nil
 	case models.ProviderCopilot:
 		return &baseProvider[CopilotClient]{
 			options: clientOptions,

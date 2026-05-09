@@ -10,13 +10,14 @@ import (
 )
 
 type Config struct {
-	BaseDir         string
-	SharedWorkplace string
-	WorkingDir      string
-	RuntimeMode     RuntimeMode
-	ActorBinaryPath string
-	Redis           *RedisConfig
-	Voice           *VoiceGatewayConfig
+	BaseDir          string
+	SharedWorkplace  string
+	WorkingDir       string
+	RuntimeMode      RuntimeMode
+	ActorBinaryPath  string
+	WakeOnOfficeOpen bool
+	Redis            *RedisConfig
+	Voice            *VoiceGatewayConfig
 }
 
 type Service struct {
@@ -204,7 +205,48 @@ func (s *Service) StartRuntime(ctx context.Context, constitution AgencyConstitut
 			"runtimeMode":    string(s.cfg.RuntimeMode),
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if s.cfg.WakeOnOfficeOpen {
+		if s.cfg.RuntimeMode == RuntimeModeDaemonized {
+			time.Sleep(1500 * time.Millisecond)
+		}
+		if err := s.publishOfficeOpenWakeSignals(ctx, constitution.OrganizationID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) publishOfficeOpenWakeSignals(ctx context.Context, organizationID string) error {
+	specs := s.Runtime.Specs()
+	now := time.Now().UnixMilli()
+	for _, spec := range specs {
+		if spec.Identity.ID == "" {
+			continue
+		}
+		signal := WakeSignal{
+			ID:             fmt.Sprintf("%s-office-open-%d", spec.Identity.ID, now),
+			OrganizationID: organizationID,
+			ActorID:        spec.Identity.ID,
+			Channel:        ActorChannel(spec.Identity.ID),
+			Kind:           SignalSchedule,
+			Payload: map[string]string{
+				"entrySource":      "office.open",
+				"scheduleId":       "office-open",
+				"prompt_injection": "The office just opened. Check in with a concise status update, state the most important next step, and broadcast it clearly to the office.",
+			},
+			CreatedAt: now,
+		}
+		if _, err := s.Ledger.AppendSignal(ctx, signal); err != nil {
+			return err
+		}
+		if err := s.Bus.Publish(ctx, signal); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) RegisterActor(ctx context.Context, actor Actor) error {

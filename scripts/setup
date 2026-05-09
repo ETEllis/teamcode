@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+# Agency — first-time setup
+# Usage: scripts/setup
+set -euo pipefail
+
+AUTO_LAUNCH=true
+SKIP_PROVIDER=false
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/setup [--no-launch] [--skip-provider]
+
+Checks dependencies, configures a provider, and builds Agency binaries.
+
+Options:
+  --no-launch     Stop after building; print the local runtime commands instead
+  --skip-provider Skip interactive provider configuration
+  -h, --help      Show this help
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-launch|--build-only)
+      AUTO_LAUNCH=false
+      ;;
+    --skip-provider)
+      SKIP_PROVIDER=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+export GOCACHE="${GOCACHE:-$REPO_ROOT/.tmp/go-build}"
+mkdir -p "$GOCACHE"
+
+ENV_FILE="$REPO_ROOT/.env"
+
+# Ensure Homebrew and Go are in PATH early
+export PATH="$PATH:/usr/local/go/bin:/opt/homebrew/bin"
+
+# ── colours ──────────────────────────────────────────────────────────────────
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
+BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
+ok()   { echo -e "  ${GREEN}✓${RESET} $*"; }
+warn() { echo -e "  ${YELLOW}⚠${RESET} $*"; }
+err()  { echo -e "  ${RED}✗${RESET} $*"; }
+hdr()  { echo -e "\n${BOLD}$*${RESET}"; }
+
+echo ""
+echo -e "${BOLD}    ___    ______ ______ _   __ ______ __  __${RESET}"
+echo -e "${BOLD}   /   |  / ____// ____// | / // ____// / / /${RESET}"
+echo -e "${BOLD}  / /| | / / __ / __/  /  |/ // /    / /_/ / ${RESET}"
+echo -e "${BOLD} / ___ |/ /_/ // /___ / /|  // /___ / __  /  ${RESET}"
+echo -e "${BOLD}/_/  |_|\\____//_____//_/ |_/ \\____//_/ /_/   ${RESET}"
+echo -e "${DIM}Agency — first-time setup${RESET}\n"
+
+# ── 1. Dependencies ───────────────────────────────────────────────────────────
+hdr "[1/4] Checking dependencies"
+
+# Go
+if command -v go &>/dev/null; then
+  ok "go $(go version | awk '{print $3}')"
+else
+  err "Go not found — install from https://go.dev/dl/ then re-run this script"
+  exit 1
+fi
+
+# Homebrew (macOS)
+HAVE_BREW=false
+if command -v brew &>/dev/null; then
+  HAVE_BREW=true
+  ok "homebrew $(brew --version | head -1)"
+else
+  warn "Homebrew not found — you will need to install redis and overmind manually"
+fi
+
+# Redis
+if command -v redis-server &>/dev/null; then
+  ok "redis-server $(redis-server --version | awk '{print $3}' | tr -d 'v=')"
+elif $HAVE_BREW; then
+  echo "  Installing redis via brew..."
+  brew install redis
+  ok "redis installed"
+else
+  err "redis not found — install it: https://redis.io/docs/getting-started/"
+  exit 1
+fi
+
+# Overmind
+if command -v overmind &>/dev/null; then
+  ok "overmind $(overmind --version 2>/dev/null || echo '')"
+elif $HAVE_BREW; then
+  echo "  Installing overmind via brew..."
+  brew install overmind
+  ok "overmind installed"
+else
+  err "overmind not found — install it: brew install overmind  or  https://github.com/DarthSim/overmind"
+  exit 1
+fi
+
+# ── 2. Provider setup ─────────────────────────────────────────────────────────
+hdr "[2/4] AI provider configuration"
+
+if $SKIP_PROVIDER; then
+  warn "Skipping provider setup by request"
+else
+# Detect what's already configured
+ANTHROPIC_SET=false; OPENAI_SET=false; GEMINI_SET=false; CODEX_SET=false
+[ -n "${ANTHROPIC_API_KEY:-}" ] && ANTHROPIC_SET=true
+[ -n "${OPENAI_API_KEY:-}"    ] && OPENAI_SET=true
+[ -n "${GEMINI_API_KEY:-}"    ] && GEMINI_SET=true
+
+if [ -f "$ENV_FILE" ]; then
+  grep -q "^ANTHROPIC_API_KEY=" "$ENV_FILE" 2>/dev/null && ANTHROPIC_SET=true
+  grep -q "^OPENAI_API_KEY="    "$ENV_FILE" 2>/dev/null && OPENAI_SET=true
+  grep -q "^GEMINI_API_KEY="    "$ENV_FILE" 2>/dev/null && GEMINI_SET=true
+fi
+
+# Detect Codex: binary present + auth.json has an access_token
+if command -v codex &>/dev/null && [ -f "$HOME/.codex/auth.json" ]; then
+  if python3 -c "
+import json, sys
+d = json.load(open('$HOME/.codex/auth.json'))
+t = (d.get('tokens') or {}).get('access_token','')
+sys.exit(0 if t.strip() else 1)
+" 2>/dev/null; then
+    CODEX_SET=true
+  fi
+fi
+
+if $CODEX_SET || $ANTHROPIC_SET || $OPENAI_SET || $GEMINI_SET; then
+  $CODEX_SET     && ok "Codex — ChatGPT OAuth authenticated"
+  $ANTHROPIC_SET && ok "ANTHROPIC_API_KEY set"
+  $OPENAI_SET    && ok "OPENAI_API_KEY set"
+  $GEMINI_SET    && ok "GEMINI_API_KEY set"
+  echo ""
+  read -r -p "  Add another provider? [y/N] " ANOTHER
+  if [[ ! "$ANOTHER" =~ ^[Yy]$ ]]; then
+    SKIP_PROVIDER=true
+  fi
+fi
+
+if [ "${SKIP_PROVIDER:-false}" != "true" ]; then
+  echo ""
+  echo "  Choose a provider:"
+  echo "  1) Codex         ChatGPT OAuth       (ChatGPT Pro/Plus — no API key needed)"
+  echo "  2) Anthropic     ANTHROPIC_API_KEY   (claude-haiku, claude-sonnet)"
+  echo "  3) OpenAI        OPENAI_API_KEY      (gpt-5.4-mini, gpt-5.3-codex, gpt-5.4)"
+  echo "  4) Gemini        GEMINI_API_KEY      (gemini-2.0-flash)"
+  echo "  5) Ollama        no key needed       (local inference — llama3.2)"
+  echo "  6) Skip          I'll configure later"
+  echo ""
+  read -r -p "  Enter 1–6: " CHOICE
+
+  _save_env_key() {
+    local KEY_NAME="$1" KEY_VALUE="$2"
+    grep -v "^${KEY_NAME}=" "$ENV_FILE" 2>/dev/null > "$ENV_FILE.tmp" || true
+    echo "${KEY_NAME}=${KEY_VALUE}" >> "$ENV_FILE.tmp"
+    mv "$ENV_FILE.tmp" "$ENV_FILE"
+    export "${KEY_NAME}=${KEY_VALUE}"
+  }
+
+  case "$CHOICE" in
+    1)
+      echo ""
+      echo "  Codex uses your ChatGPT account — no API key needed."
+      echo "  Requires: Node.js + Codex CLI + ChatGPT Pro/Plus subscription"
+      echo ""
+      # Check/install Node.js
+      if ! command -v node &>/dev/null; then
+        if $HAVE_BREW; then
+          echo "  Installing Node.js via brew..."
+          brew install node
+          ok "Node.js installed"
+        else
+          err "Node.js not found — install from https://nodejs.org then re-run"
+          exit 1
+        fi
+      else
+        ok "node $(node --version)"
+      fi
+      # Check/install Codex CLI
+      if ! command -v codex &>/dev/null; then
+        echo "  Installing Codex CLI..."
+        npm install -g @openai/codex
+        ok "Codex CLI installed"
+      else
+        ok "codex $(codex --version 2>/dev/null || echo '(installed)')"
+      fi
+      # Authenticate
+      echo ""
+      echo "  Opening browser for ChatGPT login..."
+      codex login
+      echo ""
+      if [ -f "$HOME/.codex/auth.json" ]; then
+        ok "ChatGPT OAuth credentials saved to ~/.codex/auth.json"
+        ok "Agency will use Codex CLI for all agent inference"
+      else
+        warn "auth.json not found — login may have failed. Try: codex login"
+      fi
+      ;;
+    2)
+      read -r -p "  Paste your Anthropic API key (sk-ant-...): " API_KEY
+      if [ -n "$API_KEY" ]; then
+        _save_env_key "ANTHROPIC_API_KEY" "$API_KEY"
+        ok "ANTHROPIC_API_KEY saved to .env"
+      fi
+      ;;
+    3)
+      read -r -p "  Paste your OpenAI API key (sk-...): " API_KEY
+      if [ -n "$API_KEY" ]; then
+        _save_env_key "OPENAI_API_KEY" "$API_KEY"
+        ok "OPENAI_API_KEY saved to .env"
+      fi
+      echo ""
+      echo "  Model — choose one:"
+      echo "  1) gpt-4o-mini  (fast, cost-efficient)"
+      echo "  2) gpt-4o       (most capable)"
+      echo "  3) custom       (enter a model ID)"
+      read -r -p "  Enter 1–3 [default: 1]: " MODEL_CHOICE
+      case "$MODEL_CHOICE" in
+        2) OAI_MODEL="gpt-4o" ;;
+        3) read -r -p "  Model ID: " OAI_MODEL ;;
+        *) OAI_MODEL="gpt-4o-mini" ;;
+      esac
+      _save_env_key "OPENAI_MODEL" "$OAI_MODEL"
+      ok "OPENAI_MODEL=$OAI_MODEL saved to .env"
+      ;;
+    4)
+      read -r -p "  Paste your Gemini API key: " API_KEY
+      if [ -n "$API_KEY" ]; then
+        _save_env_key "GEMINI_API_KEY" "$API_KEY"
+        ok "GEMINI_API_KEY saved to .env"
+      fi
+      ;;
+    5)
+      echo ""
+      if command -v ollama &>/dev/null; then
+        ok "ollama is installed"
+        echo "  Default model: llama3.2"
+        echo "  To use a different model set OLLAMA_MODEL in .env"
+        if ! ollama list 2>/dev/null | grep -q "llama3"; then
+          echo ""
+          read -r -p "  Pull llama3.2 now? [Y/n] " PULL
+          if [[ ! "$PULL" =~ ^[Nn]$ ]]; then
+            ollama pull llama3.2
+            ok "llama3.2 pulled"
+          fi
+        fi
+      else
+        warn "Ollama not installed"
+        echo ""
+        echo "  Install it:"
+        if $HAVE_BREW; then
+          echo "    brew install ollama"
+        else
+          echo "    curl -fsSL https://ollama.com/install.sh | sh"
+        fi
+        echo "  Then run:  ollama serve  (keep it running in a separate terminal)"
+        echo "  Then run:  ollama pull llama3.2"
+      fi
+      ;;
+    6|*)
+      warn "Skipping provider setup — agents will not respond until one is configured"
+      echo "  Run this script again to configure, or export a key manually."
+      ;;
+  esac
+fi
+fi
+
+# ── 3. Build ──────────────────────────────────────────────────────────────────
+hdr "[3/4] Building Agency"
+echo "  Building compatibility binary..."
+go build -o teamcode .
+ok "teamcode binary built"
+
+echo "  Building Agency launcher..."
+go build -o agency .
+ok "agency binary built"
+
+echo "  Building daemons..."
+scripts/build-daemons
+ok "all daemons built (dist/)"
+
+# ── 4. Launch ─────────────────────────────────────────────────────────────────
+hdr "[4/4] Launching Agency"
+echo ""
+
+if ! $AUTO_LAUNCH; then
+  ok "Setup complete"
+  echo ""
+  echo "  Start the local runtime when ready:"
+  echo "    overmind start"
+  echo ""
+  echo "  In another shell, run:"
+  echo "    ./agency"
+  echo ""
+  echo "  Smoke IPC after Redis is running:"
+  echo "    scripts/release-smoke --live"
+  echo ""
+  echo "  Full local process proof:"
+  echo "    scripts/release-smoke --with-overmind"
+  echo ""
+  exit 0
+fi
+
+# Source .env so daemons pick up all keys
+set -a; [ -f "$ENV_FILE" ] && source "$ENV_FILE"; set +a
+
+echo -e "  Starting runtime processes..."
+# Kill any stale overmind session and remove stale socket
+overmind stop 2>/dev/null || true
+rm -f .overmind.sock
+overmind start &
+OVERMIND_PID=$!
+
+# Wait for Redis to actually accept connections (up to 15s)
+echo -n "  Waiting for Redis"
+REDIS_READY=false
+for i in $(seq 1 15); do
+  if redis-cli ping &>/dev/null; then
+    REDIS_READY=true
+    break
+  fi
+  echo -n "."
+  sleep 1
+done
+echo ""
+
+if ! $REDIS_READY; then
+  err "Redis did not start within 15 seconds — check overmind logs: overmind connect redis"
+  overmind stop 2>/dev/null || kill "$OVERMIND_PID" 2>/dev/null || true
+  exit 1
+fi
+ok "Runtime ready"
+
+echo ""
+echo -e "  ${DIM}Tip: /agency genesis \"describe your team\"  — creates your first agents${RESET}"
+echo ""
+
+# Hand off to the interactive TUI — blocks until the user quits
+./agency
+
+# TUI exited — tear down the runtime
+echo ""
+echo "  Stopping runtime..."
+overmind stop 2>/dev/null || kill "$OVERMIND_PID" 2>/dev/null || true
+ok "Agency stopped."
+echo ""

@@ -2,6 +2,7 @@ package agency
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -22,9 +23,16 @@ var KokoroVoiceMap = map[string]string{
 // PlatformTTSCommand returns the best available TTS command for the current platform.
 // Priority: Kokoro Python wrapper > macOS say fallback.
 func PlatformTTSCommand(baseDir string) (command string, args []string, available bool) {
-	kokoroScript := filepath.Join(baseDir, "voice", "kokoro-tts.py")
 	if python := findPython(); python != "" {
-		return python, []string{kokoroScript, "--voice", "{voice}", "--output", "{output}", "--text", "{text}"}, true
+		for _, kokoroScript := range []string{
+			filepath.Join(baseDir, "scripts", "kokoro-tts.py"),
+			filepath.Join(baseDir, "voice", "kokoro-tts.py"),
+			filepath.Join(baseDir, ".teamcode", "agency", "voice", "kokoro-tts.py"),
+		} {
+			if _, err := os.Stat(kokoroScript); err == nil {
+				return python, []string{kokoroScript, "--voice", "{voice}", "--output", "{output}", "--text", "{text}"}, true
+			}
+		}
 	}
 	if runtime.GOOS == "darwin" {
 		if _, err := exec.LookPath("say"); err == nil {
@@ -68,5 +76,8 @@ func KokoroProsodyRate(signalKind string) string {
 
 // TTSNotInstalledMsg returns the install hint message.
 func TTSNotInstalledMsg() string {
-	return fmt.Sprintf("Voice not installed. Run: scripts/install-voice (platform: %s/%s)", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "darwin" {
+		return fmt.Sprintf("Custom voice not installed. Agency can use macOS say as a fallback; run scripts/install-voice for Kokoro TTS (platform: %s/%s)", runtime.GOOS, runtime.GOARCH)
+	}
+	return fmt.Sprintf("Custom voice not installed. Run scripts/install-voice for Kokoro TTS (platform: %s/%s)", runtime.GOOS, runtime.GOARCH)
 }

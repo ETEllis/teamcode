@@ -1,0 +1,82 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - agency_redis:/data
+
+  office-coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile.agency
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      AGENCY_BASE_DIR: /shared_workplace/.agency
+      AGENCY_SHARED_WORKPLACE: /shared_workplace
+      AGENCY_REDIS_ADDR: redis:6379
+      AGENCY_CONSTITUTION_NAME: ${AGENCY_CONSTITUTION_NAME:-solo}
+    command: ["agency-office-daemon"]
+    volumes:
+      - agency_workspace:/shared_workplace
+      - .:/workspace/repo
+    working_dir: /workspace/repo
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  runtime-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile.agency
+    depends_on:
+      redis:
+        condition: service_healthy
+      office-coordinator:
+        condition: service_started
+    environment:
+      AGENCY_BASE_DIR: /shared_workplace/.agency
+      AGENCY_SHARED_WORKPLACE: /shared_workplace
+      AGENCY_REDIS_ADDR: redis:6379
+      AGENCY_CONSTITUTION_NAME: ${AGENCY_CONSTITUTION_NAME:-solo}
+      AGENCY_ACTOR_BINARY: /usr/local/bin/agency-actor-daemon
+    command: ["agency-runtime-daemon"]
+    volumes:
+      - agency_workspace:/shared_workplace
+      - .:/workspace/repo
+    working_dir: /workspace/repo
+    restart: unless-stopped
+
+  scheduler-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile.agency
+    depends_on:
+      redis:
+        condition: service_healthy
+      office-coordinator:
+        condition: service_started
+    environment:
+      AGENCY_BASE_DIR: /shared_workplace/.agency
+      AGENCY_SHARED_WORKPLACE: /shared_workplace
+      AGENCY_REDIS_ADDR: redis:6379
+      AGENCY_CONSTITUTION_NAME: ${AGENCY_CONSTITUTION_NAME:-solo}
+    command: ["agency-scheduler-daemon"]
+    volumes:
+      - agency_workspace:/shared_workplace
+      - .:/workspace/repo
+    working_dir: /workspace/repo
+    restart: unless-stopped
+
+volumes:
+  agency_workspace:
+  agency_redis:

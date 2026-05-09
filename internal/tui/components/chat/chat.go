@@ -16,8 +16,11 @@ import (
 
 type SendMsg struct {
 	Text        string
+	DisplayText string
 	Attachments []message.Attachment
 }
+
+const InitMemoryDisplayText = "Refresh the repo's shared Agency memory."
 
 type SessionSelectedMsg = session.Session
 
@@ -107,7 +110,7 @@ func logo(width int) string {
 	baseStyle := styles.BaseStyle()
 	versionText := baseStyle.
 		Foreground(t.TextMuted()).
-		Render(version.Version + "  ·  teamcode runtime")
+		Render(version.Version + "  ·  terminal office")
 
 	return baseStyle.
 		Bold(true).
@@ -123,7 +126,7 @@ func logo(width int) string {
 }
 
 func repo(width int) string {
-	repo := "runtime repo: https://github.com/ETEllis/teamcode"
+	repo := "Build, fix, review, or inspect work here. Use /agency only when you want the staffed office controls."
 	t := theme.CurrentTheme()
 
 	return styles.BaseStyle().

@@ -4,46 +4,45 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// TeamCodeTheme implements the Theme interface with TeamCode brand colors.
-// It provides both dark and light variants.
+// TeamCodeTheme implements the Theme interface with the Agency brand colors.
+// The type keeps its legacy name so old imports and configs continue to work.
 type TeamCodeTheme struct {
 	BaseTheme
 }
 
-// NewTeamCodeTheme creates a new instance of the TeamCode theme.
+// NewTeamCodeTheme creates a new instance of the Agency theme.
 func NewTeamCodeTheme() *TeamCodeTheme {
-	// TeamCode color palette
-	// Dark mode colors
-	darkBackground := "#212121"
-	darkCurrentLine := "#252525"
-	darkSelection := "#303030"
-	darkForeground := "#e0e0e0"
-	darkComment := "#6a6a6a"
-	darkPrimary := "#fab283"   // Primary orange/gold
-	darkSecondary := "#5c9cf5" // Secondary blue
-	darkAccent := "#9d7cd8"    // Accent purple
-	darkRed := "#e06c75"       // Error red
-	darkOrange := "#f5a742"    // Warning orange
-	darkGreen := "#7fd88f"     // Success green
-	darkCyan := "#56b6c2"      // Info cyan
-	darkYellow := "#e5c07b"    // Emphasized text
-	darkBorder := "#4b4c5c"    // Border color
+	// Agency palette: command-center neutral base, signal gold primary,
+	// relay cyan secondary, and ledger green for completion/provenance.
+	darkBackground := "#101114"
+	darkCurrentLine := "#171a20"
+	darkSelection := "#262c35"
+	darkForeground := "#e8e3d6"
+	darkComment := "#7b8394"
+	darkPrimary := "#e2b76d"
+	darkSecondary := "#5eb7c7"
+	darkAccent := "#a3b18a"
+	darkRed := "#e05d5d"
+	darkOrange := "#d99045"
+	darkGreen := "#7fb069"
+	darkCyan := "#64c2cb"
+	darkYellow := "#f0d38a"
+	darkBorder := "#2e3542"
 
-	// Light mode colors
-	lightBackground := "#f8f8f8"
-	lightCurrentLine := "#f0f0f0"
-	lightSelection := "#e5e5e6"
-	lightForeground := "#2a2a2a"
-	lightComment := "#8a8a8a"
-	lightPrimary := "#3b7dd8"   // Primary blue
-	lightSecondary := "#7b5bb6" // Secondary purple
-	lightAccent := "#d68c27"    // Accent orange/gold
-	lightRed := "#d1383d"       // Error red
-	lightOrange := "#d68c27"    // Warning orange
-	lightGreen := "#3d9a57"     // Success green
-	lightCyan := "#318795"      // Info cyan
-	lightYellow := "#b0851f"    // Emphasized text
-	lightBorder := "#d3d3d3"    // Border color
+	lightBackground := "#f6f3ea"
+	lightCurrentLine := "#ece7dc"
+	lightSelection := "#ddd8cc"
+	lightForeground := "#171a20"
+	lightComment := "#667085"
+	lightPrimary := "#8a5a14"
+	lightSecondary := "#1b6f7d"
+	lightAccent := "#566b3d"
+	lightRed := "#b42318"
+	lightOrange := "#a15c12"
+	lightGreen := "#3f6f3f"
+	lightCyan := "#1f7a8c"
+	lightYellow := "#8f6f16"
+	lightBorder := "#c9c2b4"
 
 	theme := &TeamCodeTheme{}
 
@@ -103,8 +102,8 @@ func NewTeamCodeTheme() *TeamCodeTheme {
 		Light: lightCurrentLine,
 	}
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
-		Dark:  "#121212", // Slightly darker than background
-		Light: "#ffffff", // Slightly lighter than background
+		Dark:  "#08090b",
+		Light: "#fffdf7",
 	}
 
 	// Border colors
@@ -123,12 +122,12 @@ func NewTeamCodeTheme() *TeamCodeTheme {
 
 	// Diff view colors
 	theme.DiffAddedColor = lipgloss.AdaptiveColor{
-		Dark:  "#478247",
-		Light: "#2E7D32",
+		Dark:  "#5c8f58",
+		Light: "#2e7d32",
 	}
 	theme.DiffRemovedColor = lipgloss.AdaptiveColor{
-		Dark:  "#7C4444",
-		Light: "#C62828",
+		Dark:  "#9a4c4c",
+		Light: "#c62828",
 	}
 	theme.DiffContextColor = lipgloss.AdaptiveColor{
 		Dark:  "#a0a0a0",
@@ -159,16 +158,16 @@ func NewTeamCodeTheme() *TeamCodeTheme {
 		Light: lightBackground,
 	}
 	theme.DiffLineNumberColor = lipgloss.AdaptiveColor{
-		Dark:  "#888888",
-		Light: "#9E9E9E",
+		Dark:  "#818896",
+		Light: "#7a7168",
 	}
 	theme.DiffAddedLineNumberBgColor = lipgloss.AdaptiveColor{
-		Dark:  "#293229",
-		Light: "#C8E6C9",
+		Dark:  "#253323",
+		Light: "#c8e6c9",
 	}
 	theme.DiffRemovedLineNumberBgColor = lipgloss.AdaptiveColor{
-		Dark:  "#332929",
-		Light: "#FFCDD2",
+		Dark:  "#3a2929",
+		Light: "#ffcdd2",
 	}
 
 	// Markdown colors
@@ -271,7 +270,8 @@ func NewTeamCodeTheme() *TeamCodeTheme {
 }
 
 func init() {
-	// Register both names so existing config continues to work.
+	// Register all product/compatibility names so Agency is canonical while legacy config keeps working.
+	RegisterTheme("agency", NewTeamCodeTheme())
 	RegisterTheme("teamcode", NewTeamCodeTheme())
 	RegisterTheme("opencode", NewTeamCodeTheme())
 }

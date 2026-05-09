@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -21,10 +22,10 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "teamcode",
-	Short: "Terminal-native coding assistant with The Agency runtime built in",
-	Long: `TeamCode preserves the fast OpenCode-derived solo coding flow while also exposing The Agency:
-a shared organizational runtime with constitutions, office lifecycle commands, and persistent
-multi-role operating state when you want more than a single assistant.`,
+	Short: "Agency is a terminal workspace for building, fixing, and reviewing software",
+	Long: `Agency is a terminal workspace for building, fixing, reviewing, and operating software.
+The binary remains "teamcode" for compatibility, but the product experience is Agency: direct terminal
+pairing by default, with office commands available when you want shared roles, status, and continuity.`,
 	Example: `
   # Run in interactive mode
   teamcode
@@ -246,10 +247,81 @@ func setupSubscriptions(app *app.App, parentCtx context.Context) (chan tea.Msg, 
 }
 
 func Execute() {
+	configureCommandBranding()
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+func configureCommandBranding() {
+	brandName := "teamcode"
+	if len(os.Args) > 0 {
+		if base := filepath.Base(os.Args[0]); base != "" && base != "." {
+			brandName = base
+		}
+	}
+	rootCmd.Use = brandName
+	rootCmd.Example = fmt.Sprintf(`
+  # Run in interactive mode
+  %s
+
+  # Run with debug logging
+  %s -d
+
+  # Run with debug logging in a specific directory
+  %s -d -c /path/to/project
+
+  # Print version
+  %s -v
+
+  # Run a single non-interactive prompt
+  %s -p "Explain the use of context in Go"
+
+  # Run a single non-interactive prompt with JSON output format
+  %s -p "Explain the use of context in Go" -f json
+  `, brandName, brandName, brandName, brandName, brandName, brandName)
+	configureAgencyRootSurface(brandName)
+}
+
+func configureAgencyRootSurface(brandName string) {
+	if brandName != "agency" {
+		return
+	}
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "agency" {
+			cmd.Hidden = true
+			break
+		}
+	}
+	for _, cmd := range []*cobra.Command{
+		newAgencyStatusCmd(),
+		newAgencyGenesisCmd(),
+		newAgencyBootstrapCmd(),
+		newAgencyStopCmd(),
+		newAgencyBootCmd(),
+		newAgencyServicesCmd(),
+		newAgencySchedulesCmd(),
+		newAgencyOrganizationCmd(),
+		newAgencyConstitutionsCmd(),
+		newAgencyConstitutionCmd(),
+		newAgencySwitchCmd(),
+		newAgencyVoiceCmd(),
+	} {
+		if rootCmdSubcommand(cmd.Name()) != nil {
+			continue
+		}
+		rootCmd.AddCommand(cmd)
+	}
+}
+
+func rootCmdSubcommand(name string) *cobra.Command {
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == name {
+			return cmd
+		}
+	}
+	return nil
 }
 
 func init() {

@@ -13,12 +13,12 @@ import (
 func ActiveTeamName() string {
 	cfg := config.Get()
 	if cfg == nil {
-		return "teamcode"
+		return "agency"
 	}
 	if strings.TrimSpace(cfg.Team.ActiveTeam) != "" {
 		return strings.TrimSpace(cfg.Team.ActiveTeam)
 	}
-	return "teamcode"
+	return "agency"
 }
 
 func DefaultTemplateName() string {
@@ -71,9 +71,9 @@ func AgencyGenesisPrompt() string {
 func TeamTemplatesPrompt() string {
 	names := ConfiguredTemplateNames()
 	if len(names) == 0 {
-		return "Summarize the available TeamCode team templates and explain how to customize them in .teamcode.json."
+		return "Summarize the available Agency constitutions/templates and explain how to customize them in .agency.json. Mention legacy .teamcode.json support only if it matters."
 	}
-	return fmt.Sprintf("Summarize the available TeamCode team templates for this project (%s) and explain how to customize them in .teamcode.json.", strings.Join(names, ", "))
+	return fmt.Sprintf("Summarize the available Agency constitutions/templates for this project (%s) and explain how to customize them in .agency.json. Mention legacy .teamcode.json support only if it matters.", strings.Join(names, ", "))
 }
 
 func AgencyTemplatesPrompt() string {

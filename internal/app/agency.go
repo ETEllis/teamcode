@@ -127,6 +127,7 @@ type AgencyGenesisResult struct {
 	SocialThread         []string                      `json:"socialThread,omitempty"`
 	ManufacturingSignals []string                      `json:"manufacturingSignals,omitempty"`
 	Tooling              map[string]string             `json:"tooling"`
+	ManifestCount        int                           `json:"manifestCount,omitempty"`
 	CreatedAt            time.Time                     `json:"createdAt"`
 }
 
@@ -495,7 +496,103 @@ func (s *AgencyService) StartGenesis(req AgencyGenesisRequest) (AgencyGenesisRes
 	state.Office.LastEvent = "agency.genesis"
 	state.Office.LastUpdatedAt = now
 
-	return result, s.writeStateLocked(state)
+	if err := s.writeStateLocked(state); err != nil {
+		return AgencyGenesisResult{}, err
+	}
+
+	// Auto-manifest actor specs so the runtime daemon can pick them up immediately.
+	// Best-effort: don't fail genesis if manifest write fails.
+	if count, manifestErr := s.writeActorSpecsLocked(&result); manifestErr == nil {
+		result.ManifestCount = count
+	}
+	return result, nil
+}
+
+// ManifestActors re-reads the last genesis result and writes actor spec files to
+// {baseDir}/runtime/actors/. The runtime daemon loads these on start to spawn actors.
+// Returns the number of actors written.
+func (s *AgencyService) ManifestActors(_ context.Context) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, err := s.readStateLocked()
+	if err != nil {
+		return 0, err
+	}
+	if state.LastGenesis == nil {
+		return 0, nil
+	}
+	return s.writeActorSpecsLocked(state.LastGenesis)
+}
+
+// writeActorSpecsLocked converts GenesisRoleBundles into ActorRuntimeSpec JSON files
+// at {baseDir}/runtime/actors/{id}.json. Must be called with s.mu held.
+func (s *AgencyService) writeActorSpecsLocked(genesis *AgencyGenesisResult) (int, error) {
+	if s.cfg == nil {
+		return 0, fmt.Errorf("config not loaded")
+	}
+
+	baseDir := filepath.Join(s.cfg.Data.Directory, "agency")
+	if strings.TrimSpace(s.cfg.Agency.Ledger.Path) != "" {
+		baseDir = filepath.Dir(s.cfg.Agency.Ledger.Path)
+	}
+	if override := strings.TrimSpace(os.Getenv("AGENCY_BASE_DIR")); override != "" {
+		baseDir = override
+	}
+
+	orgID := firstNonEmpty(s.cfg.Team.ActiveTeam, genesis.ConstitutionName)
+
+	specsDir := filepath.Join(baseDir, "runtime", "actors")
+	if err := os.MkdirAll(specsDir, 0o755); err != nil {
+		return 0, fmt.Errorf("create actor specs dir: %w", err)
+	}
+
+	count := 0
+	for _, bundle := range genesis.RoleBundles {
+		id := actorIDFromRole(bundle.RoleName)
+		if id == "" {
+			continue
+		}
+		spec := agencypkg.ActorRuntimeSpec{
+			Identity: agencypkg.AgentIdentity{
+				ID:             id,
+				Name:           bundle.DisplayName,
+				Role:           bundle.RoleName,
+				OrganizationID: orgID,
+				AvatarPrompt:   bundle.AvatarPrompt,
+				Metadata: map[string]string{
+					"profile":   bundle.Profile,
+					"reportsTo": bundle.ReportsTo,
+					"archetype": bundle.Archetype,
+					"mission":   bundle.Mission,
+				},
+			},
+			Capabilities:   bundle.CapabilityPack,
+			OrganizationID: orgID,
+			RuntimeMode:    agencypkg.RuntimeModeDaemonized,
+			RegisteredAt:   time.Now().UnixMilli(),
+			Metadata: map[string]any{
+				"spawnOrder": bundle.SpawnOrder,
+			},
+		}
+		data, err := json.MarshalIndent(spec, "", "  ")
+		if err != nil {
+			return count, fmt.Errorf("marshal spec for %s: %w", id, err)
+		}
+		specPath := filepath.Join(specsDir, id+".json")
+		if err := os.WriteFile(specPath, data, 0o644); err != nil {
+			return count, fmt.Errorf("write spec for %s: %w", id, err)
+		}
+		count++
+	}
+	return count, nil
+}
+
+func actorIDFromRole(roleName string) string {
+	id := strings.ToLower(strings.TrimSpace(roleName))
+	id = strings.ReplaceAll(id, " ", "-")
+	id = strings.ReplaceAll(id, "_", "-")
+	return id
 }
 
 // BroadcastMsg carries an actor broadcast for TUI display.

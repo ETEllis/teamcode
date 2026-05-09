@@ -1,6 +1,6 @@
-# TeamCode Configuration Schema Generator
+# Agency Configuration Schema Generator
 
-This tool generates a JSON Schema for the TeamCode configuration file. The schema can be used to validate configuration files and provide autocompletion in editors that support JSON Schema.
+This tool generates a JSON Schema for the Agency configuration file. The schema can be used to validate configuration files and provide autocompletion in editors that support JSON Schema.
 
 ## Usage
 
@@ -24,7 +24,7 @@ The generated schema includes:
 
 You can use the generated schema in several ways:
 
-1. **Editor Integration**: Many editors (VS Code, JetBrains IDEs, etc.) support JSON Schema for validation and autocompletion. You can configure your editor to use the generated schema for `.teamcode.json` files. Legacy `.opencode.json` files are still supported.
+1. **Editor Integration**: Many editors (VS Code, JetBrains IDEs, etc.) support JSON Schema for validation and autocompletion. You can configure your editor to use the generated schema for `.agency.json` files. Legacy `.teamcode.json` and `.opencode.json` files are still supported.
 
 2. **Validation Tools**: You can use tools like [jsonschema](https://github.com/Julian/jsonschema) to validate your configuration files against the schema.
 

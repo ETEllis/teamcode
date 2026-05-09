@@ -27,6 +27,7 @@ type cacheItem struct {
 	width   int
 	content []uiMessage
 }
+
 // AgencyBroadcastMsg is a tea message carrying a live agent broadcast.
 type AgencyBroadcastMsg struct {
 	app.BroadcastMsg
@@ -149,7 +150,12 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.messages = append(m.messages, msg.Payload)
 					delete(m.cachedContent, m.currentMsgID)
 					m.currentMsgID = msg.Payload.ID
-					needsRerender = true
+					// Avoid repainting the viewport for a brand-new empty assistant placeholder.
+					// Codex-backed edit tasks can sit silent for a while before the first delta arrives,
+					// and repainting on the empty shell creates a confusing visual echo of the last user message.
+					if !(msg.Payload.Role == message.Assistant && len(msg.Payload.Parts) == 0) {
+						needsRerender = true
+					}
 				}
 			}
 			// There are tool calls from the child task
@@ -325,12 +331,12 @@ func (m *messagesCmp) View() string {
 				),
 			)
 	}
-	if len(m.messages) == 0 {
+	if len(m.messages) == 0 && len(m.broadcasts) == 0 && len(m.bulletins) == 0 {
 		content := baseStyle.
 			Width(m.width).
 			Height(max(0, m.height)).
 			Render(
-				renderSplash(m.app, m.width, m.height),
+				renderSplash(m.app, m.session, m.width, m.height),
 			)
 
 		return baseStyle.Width(m.width).Render(content)
@@ -398,6 +404,12 @@ func (m *messagesCmp) working() string {
 			task = "Building tool call..."
 		} else if !lastMessage.IsFinished() {
 			task = "Generating..."
+			if len(m.messages) >= 2 {
+				previousMessage := m.messages[len(m.messages)-2]
+				if previousMessage.Role == message.User && previousMessage.Content().String() == InitMemoryDisplayText {
+					task = "Refreshing shared memory..."
+				}
+			}
 		}
 		if task != "" {
 			text += baseStyle.

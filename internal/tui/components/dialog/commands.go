@@ -1,14 +1,14 @@
 package dialog
 
 import (
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	utilComponents "github.com/ETEllis/teamcode/internal/tui/components/util"
 	"github.com/ETEllis/teamcode/internal/tui/layout"
 	"github.com/ETEllis/teamcode/internal/tui/styles"
 	"github.com/ETEllis/teamcode/internal/tui/theme"
 	"github.com/ETEllis/teamcode/internal/tui/util"
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Command represents a command that can be executed
@@ -16,6 +16,8 @@ type Command struct {
 	ID          string
 	Title       string
 	Description string
+	Invocation  string
+	ArgsText    string
 	Handler     func(cmd Command) tea.Cmd
 }
 
@@ -61,13 +63,18 @@ type StartCompactSessionMsg struct{}
 type CloseCommandDialogMsg struct{}
 
 func InitProjectPrompt() string {
-	return `Please analyze this codebase and create a TeamCode.md file containing:
-1. Build/lint/test commands - especially for running a single test
-2. Code style guidelines including imports, formatting, types, naming conventions, error handling, etc.
+	return `Refresh the repo's shared Agency memory.
 
-The file you create will be given to agentic coding agents (such as yourself) that operate in this repository. Make it about 20 lines long.
-If there's already a teamcode.md or opencode.md, improve it.
-If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (in .github/copilot-instructions.md), make sure to include them.`
+Verify the real build, lint, and test commands, capture the practical style and architecture conventions, and update Agency.md or the existing legacy memory file with a short agent-facing summary. Include local Cursor or Copilot rules if they exist.`
+}
+
+func InitProjectExecutionPrompt() string {
+	return `Refresh the repo's shared Agency memory.
+
+Verify the real build, lint, and test commands, capture the practical style and architecture conventions, and update Agency.md or the existing legacy memory file with a short agent-facing summary. Include local Cursor or Copilot rules if they exist.
+
+Do the work quietly. Do not narrate your steps, preflight checks, or command-by-command progress while working.
+Only reply after the update is complete, with a short completion summary and any verification results or blockers.`
 }
 
 // CommandDialog interface for the command selection dialog

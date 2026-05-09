@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/ETEllis/teamcode/internal/logging"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 var (
@@ -23,12 +23,12 @@ func init() {
 	var err error
 	rgPath, err = exec.LookPath("rg")
 	if err != nil {
-		logging.Warn("Ripgrep (rg) not found in $PATH. Some features might be limited or slower.")
+		logging.Debug("Ripgrep (rg) not found in $PATH. Falling back to slower file lookups.")
 		rgPath = ""
 	}
 	fzfPath, err = exec.LookPath("fzf")
 	if err != nil {
-		logging.Warn("FZF not found in $PATH. Some features might be limited or slower.")
+		logging.Debug("FZF not found in $PATH. Falling back to non-fzf selection paths.")
 		fzfPath = ""
 	}
 }

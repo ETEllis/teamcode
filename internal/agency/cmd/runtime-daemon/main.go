@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/ETEllis/teamcode/internal/agency"
@@ -16,6 +17,12 @@ func main() {
 
 	cwd, _ := os.Getwd()
 	actorBinary := os.Getenv("AGENCY_ACTOR_BINARY")
+	if actorBinary == "" {
+		candidate := filepath.Join(cwd, "dist", "agency-actor-daemon")
+		if _, err := os.Stat(candidate); err == nil {
+			actorBinary = candidate
+		}
+	}
 	bootstrap, err := agency.LoadBootstrap(cwd, os.Getenv("AGENCY_CONSTITUTION_NAME"), agency.RuntimeModeDaemonized, actorBinary)
 	if err != nil {
 		log.Fatal(err)
