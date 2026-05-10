@@ -120,12 +120,15 @@ type DirectorConfig struct {
 }
 
 type DirectorService struct {
-	cfg         DirectorConfig
-	agent       *DirectorAgent
-	mu          sync.Mutex
-	dir         string
-	ticketsPath string
-	eventsPath  string
+	cfg          DirectorConfig
+	agent        *DirectorAgent
+	mu           sync.Mutex
+	dir          string
+	ticketsPath  string
+	eventsPath   string
+	// traceFetcher is the read-only side door used by the lattice
+	// inspector route. Optional - when nil, /lattice/* returns 503.
+	traceFetcher GISTTraceFetcher
 }
 
 func NewDirectorService(cfg DirectorConfig) (*DirectorService, error) {
