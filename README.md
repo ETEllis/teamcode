@@ -226,12 +226,17 @@ work, run passive monitor checks, and serve a local web portal:
 ```bash
 agency agency director status
 agency agency director submit --dispatch "Prepare a release note for the current branch"
+agency agency director dispatch <ticket-id>
+agency agency director policy
 agency agency director serve
 ```
 
 By default the portal binds to `127.0.0.1:8765` and uses a generated
 `AGENCY_DIRECTOR_TOKEN` stored in `.env`. Remote access is intentionally opt-in:
 put it behind a tunnel or reverse proxy only when you are ready to secure it.
+Low-risk, low/normal-priority tickets can auto-dispatch; medium, high, unknown,
+high-priority, and urgent tickets stay open until you review or manually
+dispatch them.
 
 More detail: [docs/DIRECTOR.md](docs/DIRECTOR.md).
 

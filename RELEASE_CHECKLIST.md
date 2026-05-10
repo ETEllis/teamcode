@@ -21,6 +21,7 @@ missing V1 requirements.
 | Provide deterministic completion state | `RELEASE_CHECKLIST.md`, `scripts/live-release-proof`, `scripts/verify-release-proof` | Checklist maps gates to evidence; proof command writes manifest/logs and auto-verifies | Done |
 | Prove live Redis and Overmind runtime | `scripts/live-release-proof --log-dir .tmp/release-proof-terminal-attempt` from normal Terminal | Passed and verified; evidence in `.tmp/release-proof-terminal-attempt` | Done |
 | Add personal Director agent | `agency agency director ...`, `agency-director-daemon`, `docs/DIRECTOR.md` | Director opens tickets, dispatches structured wake signals, monitors Agency, and serves a local portal | Done |
+| Gate Director autonomy | `DirectorPolicy`, `agency agency director policy`, Director tests | Low-risk tickets may auto-dispatch; higher-risk tickets stay open for review | Done |
 | Add 2026 provider profiles | `scripts/setup`, `internal/agency/provider_compatible.go` | OpenRouter, OpenCode, Zen, Go, LM Studio, LiteLLM, Mistral, xAI, Groq, and more profiles are configurable | Done |
 
 ## Decisions Locked
@@ -72,6 +73,7 @@ missing V1 requirements.
 | Director unit tests | `go test ./internal/agency` | Passed |
 | Director daemon build | `scripts/build-daemons` | Passed; includes `dist/agency-director-daemon` |
 | Director CLI status | `./agency agency director status --json` | Passed; reports `personal-director` identity and current ledger state |
+| Director policy tests | `go test ./internal/agency` | Passed; verifies allowed auto-dispatch, high-risk block, and monitor escalation |
 | Director Overmind process | `scripts/release-smoke --with-overmind --skip-static` | Passed; Overmind status includes `director` running before IPC proof |
 
 ## Terminal Live Proof

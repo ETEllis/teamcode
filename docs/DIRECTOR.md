@@ -14,6 +14,9 @@ dispatches structured work into the local office when the intent is clear.
 - `agency agency director monitor`: runs one passive monitoring pass.
 - `agency agency director submit --dispatch "..."`: opens and dispatches a
   ticket into Agency.
+- `agency agency director dispatch <ticket-id>`: manually dispatches an open
+  ticket.
+- `agency agency director policy`: prints Director's auto-dispatch guardrails.
 
 The default portal is local only:
 
@@ -54,6 +57,24 @@ User request
 Director writes its own `director/tickets.jsonl` and `director/events.jsonl`
 under the Agency data directory, while Agency's append-only ledger remains the
 source of truth for office execution.
+
+## Dispatch Policy
+
+Director is allowed to move low-risk, low/normal-priority tickets into Agency
+without another prompt. Medium, high, unknown-risk, high-priority, and urgent
+tickets stay open for review unless you manually dispatch them.
+
+That gives Director enough agency to keep small work moving while preserving the
+human decision boundary for consequential work.
+
+```bash
+agency agency director policy
+agency agency director submit --risk low --priority normal --dispatch "Summarize the office status"
+agency agency director submit --risk high --priority urgent --dispatch "Publish the release"
+```
+
+The second command can auto-dispatch. The third remains open and records an
+`auto_dispatch.blocked` event until you explicitly dispatch it.
 
 ## Provider Profiles
 

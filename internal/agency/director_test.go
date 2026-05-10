@@ -98,3 +98,136 @@ func TestDirectorMonitorWritesEvent(t *testing.T) {
 		t.Fatalf("expected monitor event, got %#v", events)
 	}
 }
+
+func TestDirectorAutoDispatchPolicyAllowsLowRisk(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	ledger, err := NewLedgerService(base + "/ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := NewMemoryEventBus()
+	defer bus.Close(ctx)
+	ch, err := bus.Subscribe(ctx, OrganizationChannel("org-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	director, err := NewDirectorService(DirectorConfig{
+		BaseDir:        base,
+		OrganizationID: "org-1",
+		Ledger:         ledger,
+		Bus:            bus,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := director.SubmitTicket(ctx, DirectorTicketRequest{
+		Title:        "Summarize low-risk status",
+		Body:         "Summarize the current office status.",
+		Risk:         "low",
+		Priority:     "normal",
+		AutoDispatch: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Status != DirectorTicketDispatched {
+		t.Fatalf("expected low-risk auto-dispatch, got %s", ticket.Status)
+	}
+	select {
+	case signal := <-ch:
+		if signal.Payload["dispatchSource"] != "submit.auto_dispatch" {
+			t.Fatalf("expected auto-dispatch source, got %q", signal.Payload["dispatchSource"])
+		}
+	default:
+		t.Fatalf("expected auto-dispatch signal")
+	}
+}
+
+func TestDirectorAutoDispatchPolicyBlocksHighRisk(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	ledger, err := NewLedgerService(base + "/ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := NewMemoryEventBus()
+	defer bus.Close(ctx)
+	ch, err := bus.Subscribe(ctx, OrganizationChannel("org-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	director, err := NewDirectorService(DirectorConfig{
+		BaseDir:        base,
+		OrganizationID: "org-1",
+		Ledger:         ledger,
+		Bus:            bus,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := director.SubmitTicket(ctx, DirectorTicketRequest{
+		Title:        "Publish release",
+		Body:         "Publish a release to GitHub.",
+		Risk:         "high",
+		Priority:     "urgent",
+		AutoDispatch: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket.Status != DirectorTicketOpen {
+		t.Fatalf("expected high-risk ticket to stay open, got %s", ticket.Status)
+	}
+	if ticket.LastSummary == "" {
+		t.Fatalf("expected blocked auto-dispatch summary")
+	}
+	select {
+	case signal := <-ch:
+		t.Fatalf("did not expect high-risk auto-dispatch signal: %#v", signal)
+	default:
+	}
+	events, err := director.ListEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events[len(events)-1].Kind != "auto_dispatch.blocked" {
+		t.Fatalf("expected blocked event, got %s", events[len(events)-1].Kind)
+	}
+}
+
+func TestDirectorMonitorAutoDispatchesEligibleTickets(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	ledger, err := NewLedgerService(base + "/ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bus := NewMemoryEventBus()
+	defer bus.Close(ctx)
+	director, err := NewDirectorService(DirectorConfig{
+		BaseDir:        base,
+		OrganizationID: "org-1",
+		Ledger:         ledger,
+		Bus:            bus,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = director.SubmitTicket(ctx, DirectorTicketRequest{
+		Title:    "Check status",
+		Body:     "Check office status.",
+		Risk:     "low",
+		Priority: "normal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := director.Monitor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Dispatched != 1 || status.OpenTickets != 0 {
+		t.Fatalf("expected monitor to auto-dispatch eligible ticket, got open=%d dispatched=%d", status.OpenTickets, status.Dispatched)
+	}
+}

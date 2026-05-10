@@ -22,6 +22,42 @@ const (
 	DirectorTicketClosed     DirectorTicketStatus = "closed"
 )
 
+type DirectorRisk string
+
+const (
+	DirectorRiskLow     DirectorRisk = "low"
+	DirectorRiskMedium  DirectorRisk = "medium"
+	DirectorRiskHigh    DirectorRisk = "high"
+	DirectorRiskUnknown DirectorRisk = "unknown"
+)
+
+type DirectorPriority string
+
+const (
+	DirectorPriorityLow    DirectorPriority = "low"
+	DirectorPriorityNormal DirectorPriority = "normal"
+	DirectorPriorityHigh   DirectorPriority = "high"
+	DirectorPriorityUrgent DirectorPriority = "urgent"
+)
+
+type DirectorPolicy struct {
+	AutoDispatchRisks         []DirectorRisk     `json:"autoDispatchRisks"`
+	AutoDispatchPriorities    []DirectorPriority `json:"autoDispatchPriorities"`
+	RequireApprovalRisks      []DirectorRisk     `json:"requireApprovalRisks"`
+	RequireApprovalPriorities []DirectorPriority `json:"requireApprovalPriorities"`
+	PauseWhenApprovalsPending bool               `json:"pauseWhenApprovalsPending"`
+}
+
+func DefaultDirectorPolicy() DirectorPolicy {
+	return DirectorPolicy{
+		AutoDispatchRisks:         []DirectorRisk{DirectorRiskLow},
+		AutoDispatchPriorities:    []DirectorPriority{DirectorPriorityLow, DirectorPriorityNormal},
+		RequireApprovalRisks:      []DirectorRisk{DirectorRiskMedium, DirectorRiskHigh, DirectorRiskUnknown},
+		RequireApprovalPriorities: []DirectorPriority{DirectorPriorityHigh, DirectorPriorityUrgent},
+		PauseWhenApprovalsPending: true,
+	}
+}
+
 type DirectorTicket struct {
 	ID             string               `json:"id"`
 	OrganizationID string               `json:"organizationId"`
@@ -80,6 +116,7 @@ type DirectorConfig struct {
 	Ledger          *LedgerService
 	Bus             EventBus
 	Router          *ModelRouter
+	Policy          DirectorPolicy
 }
 
 type DirectorService struct {
@@ -103,6 +140,9 @@ func NewDirectorService(cfg DirectorConfig) (*DirectorService, error) {
 	}
 	if cfg.Bus == nil {
 		cfg.Bus = NewMemoryEventBus()
+	}
+	if len(cfg.Policy.AutoDispatchRisks) == 0 && len(cfg.Policy.RequireApprovalRisks) == 0 {
+		cfg.Policy = DefaultDirectorPolicy()
 	}
 	dir := filepath.Join(cfg.BaseDir, "director")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -155,8 +195,8 @@ func (d *DirectorService) SubmitTicket(ctx context.Context, req DirectorTicketRe
 		Title:          title,
 		Body:           body,
 		Source:         source,
-		Priority:       defaultString(req.Priority, "normal"),
-		Risk:           defaultString(req.Risk, "unknown"),
+		Priority:       string(normalizeDirectorPriority(req.Priority)),
+		Risk:           string(normalizeDirectorRisk(req.Risk)),
 		Status:         DirectorTicketOpen,
 		AssignedRole:   strings.TrimSpace(req.AssignedRole),
 		CreatedAt:      now,
@@ -176,12 +216,16 @@ func (d *DirectorService) SubmitTicket(ctx context.Context, req DirectorTicketRe
 		return DirectorTicket{}, err
 	}
 	if req.AutoDispatch {
-		return d.DispatchTicket(ctx, ticket.ID)
+		return d.AutoDispatchTicket(ctx, ticket.ID, "submit.auto_dispatch")
 	}
 	return ticket, nil
 }
 
 func (d *DirectorService) DispatchTicket(ctx context.Context, ticketID string) (DirectorTicket, error) {
+	return d.dispatchTicket(ctx, ticketID, "manual")
+}
+
+func (d *DirectorService) AutoDispatchTicket(ctx context.Context, ticketID string, source string) (DirectorTicket, error) {
 	tickets, err := d.ListTickets()
 	if err != nil {
 		return DirectorTicket{}, err
@@ -191,6 +235,43 @@ func (d *DirectorService) DispatchTicket(ctx context.Context, ticketID string) (
 			continue
 		}
 		ticket := tickets[i]
+		allowed, reason := d.Policy().AllowsAutoDispatch(ticket)
+		if !allowed {
+			ticket.LastSummary = reason
+			ticket.UpdatedAt = time.Now().UnixMilli()
+			tickets[i] = ticket
+			if err := d.writeTickets(tickets); err != nil {
+				return DirectorTicket{}, err
+			}
+			_ = d.appendEvent(DirectorEvent{
+				ID:             uuid.NewString(),
+				OrganizationID: ticket.OrganizationID,
+				TicketID:       ticket.ID,
+				Kind:           "auto_dispatch.blocked",
+				Message:        reason,
+				Metadata:       map[string]string{"source": source, "risk": ticket.Risk, "priority": ticket.Priority},
+				CreatedAt:      time.Now().UnixMilli(),
+			})
+			return ticket, nil
+		}
+		return d.dispatchTicket(ctx, ticketID, source)
+	}
+	return DirectorTicket{}, fmt.Errorf("director ticket %q not found", ticketID)
+}
+
+func (d *DirectorService) dispatchTicket(ctx context.Context, ticketID string, source string) (DirectorTicket, error) {
+	tickets, err := d.ListTickets()
+	if err != nil {
+		return DirectorTicket{}, err
+	}
+	for i := range tickets {
+		if tickets[i].ID != ticketID {
+			continue
+		}
+		ticket := tickets[i]
+		if ticket.Status != DirectorTicketOpen {
+			return ticket, nil
+		}
 		now := time.Now().UnixMilli()
 		targetChannel := OrganizationChannel(ticket.OrganizationID)
 		if strings.TrimSpace(ticket.AssignedRole) != "" {
@@ -206,6 +287,7 @@ func (d *DirectorService) DispatchTicket(ctx context.Context, ticketID string) (
 				"entrySource":      "director.dispatch",
 				"directorAgent":    d.agent.identity.ID,
 				"directorTicketId": ticket.ID,
+				"dispatchSource":   source,
 				"title":            ticket.Title,
 				"priority":         ticket.Priority,
 				"risk":             ticket.Risk,
@@ -234,7 +316,7 @@ func (d *DirectorService) DispatchTicket(ctx context.Context, ticketID string) (
 			TicketID:       ticket.ID,
 			Kind:           "ticket.dispatched",
 			Message:        "Director dispatched: " + ticket.Title,
-			Metadata:       map[string]string{"channel": targetChannel, "signalId": signal.ID},
+			Metadata:       map[string]string{"channel": targetChannel, "signalId": signal.ID, "source": source},
 			CreatedAt:      now,
 		}); err != nil {
 			return DirectorTicket{}, err
@@ -249,6 +331,19 @@ func (d *DirectorService) Monitor(ctx context.Context) (DirectorStatus, error) {
 	if err != nil {
 		return DirectorStatus{}, err
 	}
+	autoDispatched := 0
+	if !d.Policy().PauseWhenApprovalsPending || status.PendingApprovals == 0 {
+		autoDispatched, err = d.AutoDispatchOpenTickets(ctx, "monitor")
+		if err != nil {
+			return DirectorStatus{}, err
+		}
+		if autoDispatched > 0 {
+			status, err = d.Status(ctx)
+			if err != nil {
+				return DirectorStatus{}, err
+			}
+		}
+	}
 	message := d.agent.monitorSummary(status)
 	_ = d.appendEvent(DirectorEvent{
 		ID:             uuid.NewString(),
@@ -257,12 +352,45 @@ func (d *DirectorService) Monitor(ctx context.Context) (DirectorStatus, error) {
 		Message:        message,
 		Metadata: map[string]string{
 			"openTickets":      fmt.Sprintf("%d", status.OpenTickets),
+			"autoDispatched":   fmt.Sprintf("%d", autoDispatched),
 			"pendingApprovals": fmt.Sprintf("%d", status.PendingApprovals),
 			"ledgerSequence":   fmt.Sprintf("%d", status.LedgerSequence),
 		},
 		CreatedAt: time.Now().UnixMilli(),
 	})
 	return status, nil
+}
+
+func (d *DirectorService) AutoDispatchOpenTickets(ctx context.Context, source string) (int, error) {
+	tickets, err := d.ListTickets()
+	if err != nil {
+		return 0, err
+	}
+	dispatched := 0
+	for _, ticket := range tickets {
+		if ticket.Status != DirectorTicketOpen {
+			continue
+		}
+		allowed, _ := d.Policy().AllowsAutoDispatch(ticket)
+		if !allowed {
+			continue
+		}
+		if _, err := d.dispatchTicket(ctx, ticket.ID, source+".auto"); err != nil {
+			return dispatched, err
+		}
+		dispatched++
+	}
+	return dispatched, nil
+}
+
+func (d *DirectorService) Policy() DirectorPolicy {
+	if d == nil {
+		return DefaultDirectorPolicy()
+	}
+	if len(d.cfg.Policy.AutoDispatchRisks) == 0 && len(d.cfg.Policy.RequireApprovalRisks) == 0 {
+		return DefaultDirectorPolicy()
+	}
+	return d.cfg.Policy
 }
 
 func (d *DirectorService) Status(ctx context.Context) (DirectorStatus, error) {
@@ -433,6 +561,68 @@ func (a *DirectorAgent) monitorSummary(status DirectorStatus) string {
 		return fmt.Sprintf("I am tracking %d open ticket(s) and %d dispatched ticket(s).", status.OpenTickets, status.Dispatched)
 	}
 	return "Office check complete. No urgent decisions need you right now."
+}
+
+func (p DirectorPolicy) AllowsAutoDispatch(ticket DirectorTicket) (bool, string) {
+	risk := normalizeDirectorRisk(ticket.Risk)
+	priority := normalizeDirectorPriority(ticket.Priority)
+	if containsRisk(p.RequireApprovalRisks, risk) {
+		return false, fmt.Sprintf("Director held %q for review because risk is %s.", ticket.Title, risk)
+	}
+	if containsPriority(p.RequireApprovalPriorities, priority) {
+		return false, fmt.Sprintf("Director held %q for review because priority is %s.", ticket.Title, priority)
+	}
+	if !containsRisk(p.AutoDispatchRisks, risk) {
+		return false, fmt.Sprintf("Director held %q for review because risk is %s.", ticket.Title, risk)
+	}
+	if !containsPriority(p.AutoDispatchPriorities, priority) {
+		return false, fmt.Sprintf("Director held %q for review because priority is %s.", ticket.Title, priority)
+	}
+	return true, "Director policy allows automatic dispatch."
+}
+
+func normalizeDirectorRisk(value string) DirectorRisk {
+	switch DirectorRisk(strings.ToLower(strings.TrimSpace(value))) {
+	case DirectorRiskLow:
+		return DirectorRiskLow
+	case DirectorRiskMedium:
+		return DirectorRiskMedium
+	case DirectorRiskHigh:
+		return DirectorRiskHigh
+	default:
+		return DirectorRiskUnknown
+	}
+}
+
+func normalizeDirectorPriority(value string) DirectorPriority {
+	switch DirectorPriority(strings.ToLower(strings.TrimSpace(value))) {
+	case DirectorPriorityLow:
+		return DirectorPriorityLow
+	case DirectorPriorityHigh:
+		return DirectorPriorityHigh
+	case DirectorPriorityUrgent:
+		return DirectorPriorityUrgent
+	default:
+		return DirectorPriorityNormal
+	}
+}
+
+func containsRisk(values []DirectorRisk, target DirectorRisk) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPriority(values []DirectorPriority, target DirectorPriority) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func readJSONL[T any](path string) ([]T, error) {

@@ -576,8 +576,10 @@ func newAgencyDirectorCmd() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newAgencyDirectorStatusCmd(),
+		newAgencyDirectorPolicyCmd(),
 		newAgencyDirectorMonitorCmd(),
 		newAgencyDirectorSubmitCmd(),
+		newAgencyDirectorDispatchCmd(),
 		newAgencyDirectorServeCmd(),
 	)
 	return cmd
@@ -649,6 +651,34 @@ func newAgencyDirectorMonitorCmd() *cobra.Command {
 	return cmd
 }
 
+func newAgencyDirectorPolicyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "policy",
+		Short: "Inspect Director auto-dispatch policy",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			director, cleanup, err := bootstrapDirectorService(cmd)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			policy := director.Policy()
+			if rendered, err := outputJSON(cmd, policy); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			fmt.Printf("Auto-dispatch risks: %s\n", joinDirectorRisks(policy.AutoDispatchRisks))
+			fmt.Printf("Auto-dispatch priorities: %s\n", joinDirectorPriorities(policy.AutoDispatchPriorities))
+			fmt.Printf("Review-required risks: %s\n", joinDirectorRisks(policy.RequireApprovalRisks))
+			fmt.Printf("Review-required priorities: %s\n", joinDirectorPriorities(policy.RequireApprovalPriorities))
+			fmt.Printf("Pause when approvals pending: %t\n", policy.PauseWhenApprovalsPending)
+			return nil
+		},
+	}
+	addJSONFlag(cmd)
+	return cmd
+}
+
 func newAgencyDirectorSubmitCmd() *cobra.Command {
 	var dispatch bool
 	var title string
@@ -691,6 +721,36 @@ func newAgencyDirectorSubmitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "Ticket title")
 	cmd.Flags().StringVar(&priority, "priority", "normal", "Ticket priority")
 	cmd.Flags().StringVar(&risk, "risk", "unknown", "Ticket risk level")
+	addJSONFlag(cmd)
+	return cmd
+}
+
+func newAgencyDirectorDispatchCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dispatch [ticket-id]",
+		Short: "Manually dispatch an open Director ticket into Agency",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			director, cleanup, err := bootstrapDirectorService(cmd)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			ticket, err := director.DispatchTicket(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			if rendered, err := outputJSON(cmd, ticket); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			fmt.Printf("Director ticket dispatched: %s\n", ticket.ID)
+			fmt.Printf("Title: %s\n", ticket.Title)
+			fmt.Printf("Status: %s\n", ticket.Status)
+			return nil
+		},
+	}
 	addJSONFlag(cmd)
 	return cmd
 }
@@ -762,6 +822,22 @@ func directorPortalURL(baseURL string, token string) string {
 		return baseURL
 	}
 	return baseURL + "?token=" + token
+}
+
+func joinDirectorRisks(values []agencyrt.DirectorRisk) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, string(value))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func joinDirectorPriorities(values []agencyrt.DirectorPriority) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, string(value))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func newOfficeVoiceCmd() *cobra.Command {
