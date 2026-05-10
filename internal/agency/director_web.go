@@ -36,7 +36,7 @@ func NewDirectorHTTPServer(cfg DirectorHTTPConfig, director *DirectorService) *D
 	// Lattice inspector (Phase 3, item #14). Renders typed CausalGraph
 	// + PearlPlan + Shapley attribution per persisted GIST trace.
 	mux.HandleFunc("/lattice", s.requireAuth(s.handleLatticeIndex))
-	mux.HandleFunc("/lattice/", s.requireAuth(s.handleLatticeView))
+	mux.HandleFunc("/lattice/", s.requireAuth(s.handleLatticeRouter))
 	mux.HandleFunc("/api/lattice", s.requireAuth(s.handleAPILatticeList))
 	mux.HandleFunc("/api/lattice/", s.requireAuth(s.handleAPILatticeView))
 	s.server = &http.Server{

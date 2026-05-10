@@ -8,10 +8,12 @@ import (
 	"github.com/ETEllis/teamcode/internal/db"
 )
 
-// dbGISTTraceFetcher implements agency.GISTTraceFetcher backed by the
-// SQLite agency_gist_traces table. It is the read-only counterpart to
-// the actor-daemon's dbGISTTraceStore: that side writes
-// inspector_json, this side reads it for the lattice inspector route.
+// dbGISTTraceFetcher implements agency.GISTTraceFetcher (and the
+// optional agency.SpeculativeFetcher) backed by the SQLite
+// agency_gist_traces table. It is the read-only counterpart to the
+// actor-daemon's dbGISTTraceStore: that side writes inspector_json
+// and speculative_json, this side reads them for the lattice
+// inspector + cathedral routes.
 type dbGISTTraceFetcher struct {
 	q *db.Queries
 }
@@ -34,7 +36,7 @@ func (f *dbGISTTraceFetcher) GetInspectorTrace(ctx context.Context, id string) (
 	}
 
 	view := &agency.InspectorTraceView{
-		Summary:       agency.InspectorTraceSummary{
+		Summary: agency.InspectorTraceSummary{
 			ID:         row.ID,
 			OfficeID:   row.OfficeID,
 			AgentID:    row.AgentID,
@@ -97,4 +99,25 @@ func (f *dbGISTTraceFetcher) ListInspectorTraces(ctx context.Context, officeID s
 		})
 	}
 	return out, nil
+}
+
+// GetSpeculativeBundle returns the persisted SpeculativeBundle for the
+// given trace id, or nil if the row exists but the bundle is empty or
+// malformed. Returning agency.ErrTraceNotFound for missing rows lets
+// the cathedral handler emit a clean 404.
+func (f *dbGISTTraceFetcher) GetSpeculativeBundle(ctx context.Context, id string) (*agency.SpeculativeBundle, error) {
+	row, err := f.q.GetAgencyGistTrace(ctx, id)
+	if err != nil {
+		if errors.Is(err, db.ErrAgencyGistTraceNotFound) {
+			return nil, agency.ErrTraceNotFound
+		}
+		return nil, err
+	}
+	bundle, parseErr := agency.ParseSpeculativeBundle(row.SpeculativeJSON)
+	if parseErr != nil {
+		// Persisted blob is malformed; surface as nil so cathedral
+		// falls back to the demo cohort rather than 500ing.
+		return nil, nil
+	}
+	return bundle, nil
 }
