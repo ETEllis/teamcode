@@ -45,7 +45,139 @@ func newAgencyGISTCmd() *cobra.Command {
 		Use:   "gist",
 		Short: "Inspect Agency GIST lattice traces and proof packets",
 	}
-	cmd.AddCommand(newAgencyGISTTracesCmd())
+	cmd.AddCommand(
+		newAgencyGISTTracesCmd(),
+		newAgencyGISTInspectCmd(),
+	)
+	return cmd
+}
+
+// newAgencyGISTInspectCmd is the CLI counterpart to the lattice
+// inspector HTML view at /lattice/<id>. It loads a single trace by id
+// and prints a human-readable dump of the typed CausalGraph, Pearl
+// plan, and Shapley attribution.
+func newAgencyGISTInspectCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "inspect <trace-id>",
+		Short: "Pretty-print a single GIST trace's causal graph + Pearl plan + Shapley attribution",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := strings.TrimSpace(args[0])
+			conn, err := db.Connect()
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+			row, err := db.New(conn).GetAgencyGistTrace(cmd.Context(), id)
+			if err != nil {
+				return err
+			}
+			bundle, parseErr := agencyrt.ParseInspectorBundle(row.InspectorJSON)
+			source := "inspector_json"
+			if parseErr != nil {
+				source = "inspector_json:parse_error:" + parseErr.Error()
+			}
+			if bundle == nil {
+				bundle = agencyrt.HydrateInspectorBundleFromLegacy(row.TraceJSON)
+				source = "legacy_hydrated"
+			}
+			if rendered, err := outputJSON(cmd, map[string]any{
+				"id":           row.ID,
+				"officeId":     row.OfficeID,
+				"agentId":      row.AgentID,
+				"verdict":      row.Verdict,
+				"riskLevel":    row.RiskLevel,
+				"confidence":   row.Confidence,
+				"createdAt":    row.CreatedAt,
+				"bundle":       bundle,
+				"bundleSource": source,
+			}); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			fmt.Printf("Trace      %s\n", row.ID)
+			fmt.Printf("Office     %s   Agent  %s\n", emptyDash(row.OfficeID), emptyDash(row.AgentID))
+			fmt.Printf("Verdict    %s   Risk   %s   Confidence  %.2f\n",
+				emptyDash(row.Verdict), emptyDash(row.RiskLevel), row.Confidence)
+			fmt.Printf("Source     %s\n", source)
+			if bundle == nil {
+				fmt.Println("No inspector bundle persisted, and no legacy chain to hydrate.")
+				return nil
+			}
+			if bundle.CausalGraph != nil {
+				fmt.Println()
+				fmt.Println("Causal graph:")
+				for _, n := range bundle.CausalGraph.Nodes {
+					fmt.Printf("  [%-12s] %-30s w=%-5.2f  %s\n",
+						n.Role, n.ID, n.Weight, n.Summary)
+				}
+			}
+			if bundle.PearlPlan != nil {
+				fmt.Println()
+				fmt.Printf("Pearl plan: evidenceWeight=%.3f confounderLoad=%.3f\n",
+					bundle.PearlPlan.Hypothesis.EvidenceWeight,
+					bundle.PearlPlan.Hypothesis.ConfounderLoad)
+				for _, a := range bundle.PearlPlan.Actions {
+					mark := " "
+					if a.Recommended {
+						mark = "*"
+					}
+					fmt.Printf("  %s %-25s score=%-6.3f risk=%-5.3f\n", mark, a.Label, a.Score, a.Risk)
+				}
+				if bundle.PearlPlan.Prediction.Recommended != "" {
+					fmt.Printf("  -> recommend %s, projected confidence %.3f\n",
+						bundle.PearlPlan.Prediction.Recommended,
+						bundle.PearlPlan.Prediction.ProjectedConfidence)
+				}
+				if bundle.PearlPlan.Prediction.BlockedByConfounder {
+					fmt.Println("  ! prediction blocked by confounder load")
+				}
+			}
+			if len(bundle.Attribution) > 0 {
+				fmt.Println()
+				fmt.Println("Shapley attribution:")
+				for _, a := range bundle.Attribution {
+					approx := ""
+					if a.Approximate {
+						approx = " (approx)"
+					}
+					fmt.Printf("  #%-2d  %-12s  %-30s  phi=%+.3f%s\n",
+						a.Rank, a.Role, a.NodeID, a.Phi, approx)
+				}
+			}
+			if len(bundle.Disputes) > 0 {
+				fmt.Println()
+				fmt.Println("Adversarial review:")
+				for _, rec := range bundle.Disputes {
+					marker := "·"
+					switch rec.Adjudication.Status {
+					case agencyrt.DisputeStatusUpheld:
+						marker = "!"
+					case agencyrt.DisputeStatusNoted:
+						marker = "~"
+					}
+					fmt.Printf("  %s [%-8s] %-20s %-25s ΔConf %+6.3f  swing %5.3f  %s\n",
+						marker,
+						rec.Adjudication.Status,
+						rec.Report.Dispute.Ground,
+						rec.Report.Dispute.ID,
+						rec.Report.DeltaConfidence,
+						rec.Adjudication.SwingScore,
+						rec.Adjudication.Reason)
+				}
+			}
+			if len(bundle.FlatChain) > 0 {
+				fmt.Println()
+				fmt.Println("Reasoning chain:")
+				for i, line := range bundle.FlatChain {
+					fmt.Printf("  %2d. %s\n", i+1, line)
+				}
+			}
+			return nil
+		},
+	}
+	addJSONFlag(cmd)
 	return cmd
 }
 

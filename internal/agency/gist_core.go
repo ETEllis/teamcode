@@ -32,6 +32,7 @@ type gistSubprocessOutput struct {
 	Verdict             string               `json:"verdict"`
 	Confidence          float64              `json:"confidence"`
 	CausalChain         []string             `json:"causalChain,omitempty"`
+	CausalGraph         *CausalGraph         `json:"causalGraph,omitempty"`
 	OpenQuestions       []string             `json:"openQuestions,omitempty"`
 	ExecutionIntent     string               `json:"executionIntent"`
 	Intent              *ActionIntent        `json:"intent,omitempty"`
@@ -242,6 +243,7 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 		Verdict:             out.Verdict,
 		Confidence:          out.Confidence,
 		CausalChain:         out.CausalChain,
+		CausalGraph:         out.CausalGraph,
 		OpenQuestions:       out.OpenQuestions,
 		ExecutionIntent:     out.ExecutionIntent,
 		Intent:              out.Intent,
@@ -255,7 +257,44 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 		Counterfactuals:     out.Counterfactuals,
 		ConfidenceBreakdown: out.ConfidenceBreakdown,
 	}
+	// Reconcile the typed graph and the legacy []string view. If the
+	// subprocess emitted a typed CausalGraph (protocolVersion >= 1)
+	// we project it onto CausalChain so legacy consumers stay
+	// deterministic; otherwise we hydrate the graph from the chain so
+	// Pearl-aware consumers always have a typed view.
+	verdict.SyncCausalChain()
+	// Run the Pearl loop and Shapley attribution over the typed graph
+	// when available. Both functions are nil-safe and cheap (sub-ms for
+	// graphs of typical size) so we run them unconditionally on the
+	// success path. The degraded path returns from defaultVerdict()
+	// before this code, so its CausalChain shape is preserved.
+	verdict.PearlPlan = RunPearlLoop(verdict.CausalGraph)
+	verdict.Attribution = AttributeNecessity(verdict.CausalGraph)
+	applyConfounderRiskUplift(&verdict)
 	return verdict, lattice, nil
+}
+
+// applyConfounderRiskUplift propagates a Pearl-loop confounder block
+// onto the legacy RiskLevel and OpenQuestions surface so existing
+// consumers (model router, approval flow) react correctly without
+// needing to read PearlPlan directly.
+func applyConfounderRiskUplift(v *GISTVerdict) {
+	if v == nil || v.PearlPlan == nil {
+		return
+	}
+	if !v.PearlPlan.Prediction.BlockedByConfounder {
+		return
+	}
+	if v.RiskLevel != "high" {
+		v.RiskLevel = "high"
+	}
+	confounderQuestion := "Resolve confounders flagged by the Pearl loop before consequential action."
+	for _, q := range v.OpenQuestions {
+		if q == confounderQuestion {
+			return
+		}
+	}
+	v.OpenQuestions = append(v.OpenQuestions, confounderQuestion)
 }
 
 // ElasticStretch adjusts verdict confidence based on the elastic budget TTL.

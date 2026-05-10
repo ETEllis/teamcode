@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/ETEllis/teamcode/internal/agency"
+	"github.com/ETEllis/teamcode/internal/db"
+
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 func main() {
@@ -43,6 +47,16 @@ func main() {
 	})
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// Lattice inspector (Phase 3, item #14): wire a read-only DB-backed
+	// trace fetcher when the database is available. Inspector routes
+	// gracefully degrade to 503 if the DB is offline so the rest of
+	// the Director portal stays up.
+	if conn, dbErr := db.Connect(); dbErr != nil {
+		log.Printf("director-daemon: lattice inspector disabled (DB unavailable): %v", dbErr)
+	} else {
+		director.SetTraceFetcher(newDBGISTTraceFetcher(db.New(conn)))
 	}
 
 	addr := getenv("AGENCY_DIRECTOR_ADDR", "127.0.0.1:8765")

@@ -33,6 +33,12 @@ func NewDirectorHTTPServer(cfg DirectorHTTPConfig, director *DirectorService) *D
 	mux.HandleFunc("/api/events", s.requireAuth(s.handleEvents))
 	mux.HandleFunc("/api/monitor", s.requireAuth(s.handleMonitor))
 	mux.HandleFunc("/api/dispatch/", s.requireAuth(s.handleDispatch))
+	// Lattice inspector (Phase 3, item #14). Renders typed CausalGraph
+	// + PearlPlan + Shapley attribution per persisted GIST trace.
+	mux.HandleFunc("/lattice", s.requireAuth(s.handleLatticeIndex))
+	mux.HandleFunc("/lattice/", s.requireAuth(s.handleLatticeView))
+	mux.HandleFunc("/api/lattice", s.requireAuth(s.handleAPILatticeList))
+	mux.HandleFunc("/api/lattice/", s.requireAuth(s.handleAPILatticeView))
 	s.server = &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           mux,
@@ -226,7 +232,7 @@ var directorIndexTemplate = template.Must(template.New("director").Parse(`<!doct
       <h1>Agency Director</h1>
       <div class="sub">A calm personal interface over your local AI office.</div>
     </div>
-    <button class="secondary" style="max-width: 180px" onclick="monitor()">Check Office</button>
+    <div style="display:flex;gap:8px;align-items:center"><a class="pill" href="/lattice{{.TokenHint}}">Lattice inspector →</a><button class="secondary" style="max-width: 180px" onclick="monitor()">Check Office</button></div>
   </header>
   <main>
     <section>

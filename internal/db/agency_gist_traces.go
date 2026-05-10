@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -15,6 +17,7 @@ type InsertAgencyGistTraceParams struct {
 	TraceJSON       string
 	ProofJSON       string
 	LatticeJSON     string
+	InspectorJSON   string
 	InputHash       string
 	NextLatticeHash string
 	CreatedAt       int64
@@ -30,10 +33,15 @@ type AgencyGistTrace struct {
 	TraceJSON       string  `json:"trace_json"`
 	ProofJSON       string  `json:"proof_json"`
 	LatticeJSON     string  `json:"lattice_json"`
+	InspectorJSON   string  `json:"inspector_json"`
 	InputHash       string  `json:"input_hash"`
 	NextLatticeHash string  `json:"next_lattice_hash"`
 	CreatedAt       int64   `json:"created_at"`
 }
+
+// ErrAgencyGistTraceNotFound is returned by GetAgencyGistTrace when no row
+// matches the supplied id. Callers may check via errors.Is.
+var ErrAgencyGistTraceNotFound = errors.New("agency gist trace not found")
 
 func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGistTraceParams) error {
 	if arg.CreatedAt == 0 {
@@ -45,11 +53,14 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 	if arg.LatticeJSON == "" {
 		arg.LatticeJSON = "{}"
 	}
+	if arg.InspectorJSON == "" {
+		arg.InspectorJSON = "{}"
+	}
 	_, err := q.db.ExecContext(ctx,
 		`INSERT INTO agency_gist_traces (
 		   id, office_id, agent_id, verdict, risk_level, confidence, trace_json,
-		   proof_json, lattice_json, input_hash, next_lattice_hash, created_at
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   proof_json, lattice_json, inspector_json, input_hash, next_lattice_hash, created_at
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   verdict = excluded.verdict,
 		   risk_level = excluded.risk_level,
@@ -57,6 +68,7 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 		   trace_json = excluded.trace_json,
 		   proof_json = excluded.proof_json,
 		   lattice_json = excluded.lattice_json,
+		   inspector_json = excluded.inspector_json,
 		   input_hash = excluded.input_hash,
 		   next_lattice_hash = excluded.next_lattice_hash,
 		   created_at = excluded.created_at`,
@@ -69,11 +81,47 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 		arg.TraceJSON,
 		arg.ProofJSON,
 		arg.LatticeJSON,
+		arg.InspectorJSON,
 		arg.InputHash,
 		arg.NextLatticeHash,
 		arg.CreatedAt,
 	)
 	return err
+}
+
+// GetAgencyGistTrace returns the single trace row matching id, or
+// ErrAgencyGistTraceNotFound if no row exists.
+func (q *Queries) GetAgencyGistTrace(ctx context.Context, id string) (AgencyGistTrace, error) {
+	row := q.db.QueryRowContext(ctx,
+		`SELECT id, office_id, agent_id, verdict, risk_level, confidence, trace_json,
+		        proof_json, lattice_json, inspector_json, input_hash, next_lattice_hash, created_at
+		   FROM agency_gist_traces
+		  WHERE id = ?`,
+		id,
+	)
+	var item AgencyGistTrace
+	err := row.Scan(
+		&item.ID,
+		&item.OfficeID,
+		&item.AgentID,
+		&item.Verdict,
+		&item.RiskLevel,
+		&item.Confidence,
+		&item.TraceJSON,
+		&item.ProofJSON,
+		&item.LatticeJSON,
+		&item.InspectorJSON,
+		&item.InputHash,
+		&item.NextLatticeHash,
+		&item.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AgencyGistTrace{}, ErrAgencyGistTraceNotFound
+	}
+	if err != nil {
+		return AgencyGistTrace{}, err
+	}
+	return item, nil
 }
 
 func (q *Queries) ListAgencyGistTracesByOffice(ctx context.Context, officeID string, limit int) ([]AgencyGistTrace, error) {
@@ -82,7 +130,7 @@ func (q *Queries) ListAgencyGistTracesByOffice(ctx context.Context, officeID str
 	}
 	rows, err := q.db.QueryContext(ctx,
 		`SELECT id, office_id, agent_id, verdict, risk_level, confidence, trace_json,
-		        proof_json, lattice_json, input_hash, next_lattice_hash, created_at
+		        proof_json, lattice_json, inspector_json, input_hash, next_lattice_hash, created_at
 		   FROM agency_gist_traces
 		  WHERE office_id = ?
 		  ORDER BY created_at DESC
@@ -108,6 +156,7 @@ func (q *Queries) ListAgencyGistTracesByOffice(ctx context.Context, officeID str
 			&item.TraceJSON,
 			&item.ProofJSON,
 			&item.LatticeJSON,
+			&item.InspectorJSON,
 			&item.InputHash,
 			&item.NextLatticeHash,
 			&item.CreatedAt,
