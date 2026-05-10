@@ -550,10 +550,16 @@ type GISTProofPacket struct {
 }
 
 // GISTVerdict is the output of the GIST causal compression step.
+//
+// The legacy CausalChain []string field is kept for backward compatibility
+// with all existing call sites; the typed CausalGraph is the new source
+// of truth for Pearl-style abduction/action/prediction reasoning. Use
+// SyncCausalChain to keep the two views aligned after mutating either.
 type GISTVerdict struct {
 	Verdict             string               `json:"verdict"`
 	Confidence          float64              `json:"confidence"`
 	CausalChain         []string             `json:"causalChain,omitempty"`
+	CausalGraph         *CausalGraph         `json:"causalGraph,omitempty"`
 	OpenQuestions       []string             `json:"openQuestions,omitempty"`
 	ExecutionIntent     string               `json:"executionIntent"`
 	Intent              *ActionIntent        `json:"intent,omitempty"`
@@ -568,6 +574,30 @@ type GISTVerdict struct {
 	ConfidenceBreakdown map[string]float64   `json:"confidenceBreakdown,omitempty"`
 	Degraded            bool                 `json:"degraded,omitempty"`
 	DegradedReason      string               `json:"degradedReason,omitempty"`
+}
+
+// SyncCausalChain reconciles the typed CausalGraph and the legacy
+// CausalChain []string fields on the verdict. Precedence:
+//
+//   - If CausalGraph has nodes, CausalChain is overwritten with
+//     graph.FlatChain() so legacy consumers see a deterministic view.
+//   - Otherwise, if CausalChain is non-empty and CausalGraph is nil,
+//     CausalGraph is hydrated from the chain via
+//     HydrateLegacyCausalChain so Pearl-aware consumers always see a
+//     graph.
+//
+// Calling SyncCausalChain repeatedly is safe and idempotent.
+func (v *GISTVerdict) SyncCausalChain() {
+	if v == nil {
+		return
+	}
+	if v.CausalGraph != nil && len(v.CausalGraph.Nodes) > 0 {
+		v.CausalChain = v.CausalGraph.FlatChain()
+		return
+	}
+	if len(v.CausalChain) > 0 && v.CausalGraph == nil {
+		v.CausalGraph = HydrateLegacyCausalChain(v.CausalChain)
+	}
 }
 
 // ActionIntent carries model routing requirements derived from a GISTVerdict.
