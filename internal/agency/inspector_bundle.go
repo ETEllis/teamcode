@@ -58,6 +58,12 @@ type GISTInspectorBundle struct {
 	// Attribution is the Shapley necessity ranking from
 	// AttributeNecessity. Empty if the graph had no players.
 	Attribution []NodeAttribution `json:"attribution,omitempty"`
+
+	// Disputes is the adversarial-review record set attached to this
+	// verdict. Each entry pairs a Dispute with its DisputeReport
+	// (counterfactual swing) and Adjudication (status). Empty for
+	// verdicts that have not been routed through the reviewer.
+	Disputes []DisputeRecord `json:"disputes,omitempty"`
 }
 
 // BuildInspectorBundle builds an inspector bundle from a GISTVerdict.
@@ -92,6 +98,9 @@ func BuildInspectorBundle(verdict GISTVerdict) *GISTInspectorBundle {
 	}
 	if len(verdict.Attribution) > 0 {
 		bundle.Attribution = append([]NodeAttribution(nil), verdict.Attribution...)
+	}
+	if len(verdict.Disputes) > 0 {
+		bundle.Disputes = append([]DisputeRecord(nil), verdict.Disputes...)
 	}
 	return bundle
 }
@@ -128,7 +137,7 @@ func ParseInspectorBundle(raw string) (*GISTInspectorBundle, error) {
 	}
 	if bundle.ProtocolVersion == 0 && bundle.CausalGraph == nil &&
 		bundle.PearlPlan == nil && len(bundle.Attribution) == 0 &&
-		len(bundle.FlatChain) == 0 {
+		len(bundle.FlatChain) == 0 && len(bundle.Disputes) == 0 {
 		return nil, nil
 	}
 	return &bundle, nil

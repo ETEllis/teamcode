@@ -146,6 +146,27 @@ func newAgencyGISTInspectCmd() *cobra.Command {
 						a.Rank, a.Role, a.NodeID, a.Phi, approx)
 				}
 			}
+			if len(bundle.Disputes) > 0 {
+				fmt.Println()
+				fmt.Println("Adversarial review:")
+				for _, rec := range bundle.Disputes {
+					marker := "·"
+					switch rec.Adjudication.Status {
+					case agencyrt.DisputeStatusUpheld:
+						marker = "!"
+					case agencyrt.DisputeStatusNoted:
+						marker = "~"
+					}
+					fmt.Printf("  %s [%-8s] %-20s %-25s ΔConf %+6.3f  swing %5.3f  %s\n",
+						marker,
+						rec.Adjudication.Status,
+						rec.Report.Dispute.Ground,
+						rec.Report.Dispute.ID,
+						rec.Report.DeltaConfidence,
+						rec.Adjudication.SwingScore,
+						rec.Adjudication.Reason)
+				}
+			}
 			if len(bundle.FlatChain) > 0 {
 				fmt.Println()
 				fmt.Println("Reasoning chain:")

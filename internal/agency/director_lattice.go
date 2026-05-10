@@ -261,6 +261,14 @@ section.full{grid-column:1/-1}
 .role-intervention{color:var(--gold)}
 .role-outcome{color:var(--cyan)}
 .role-unknown{color:var(--muted)}
+.status-upheld{color:var(--red);font-weight:600}
+.status-noted{color:var(--gold)}
+.status-rejected{color:var(--muted)}
+.dispute{border:1px solid var(--line);border-radius:6px;padding:10px;margin:8px 0;background:#15171c}
+.dispute .head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.dispute .ground{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.dispute .reason{margin-top:6px;font-size:12px;color:var(--muted)}
+.dispute .swing{font-family:ui-monospace,monospace;font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600}
@@ -399,6 +407,45 @@ a:hover{text-decoration:underline}
   </table>
   <div class="legend">φ &gt; 0 pushed confidence up · φ &lt; 0 pulled it down. Confounders typically appear with negative φ.</div>
   {{else}}<div class="muted">No necessity attribution for this trace.</div>{{end}}
+  {{end}}
+</section>
+
+<section class="full">
+  <h2>Adversarial review · disputes</h2>
+  {{with .View.Bundle}}
+  {{if .Disputes}}
+  <div class="legend">
+    <span class="status-upheld">upheld</span> — counterfactual swing flipped a decision &nbsp;·&nbsp;
+    <span class="status-noted">noted</span> — measurable but sub-threshold &nbsp;·&nbsp;
+    <span class="status-rejected">rejected</span> — no detectable swing
+  </div>
+  {{range .Disputes}}
+  <div class="dispute">
+    <div class="head">
+      <div>
+        <span class="status-{{.Adjudication.Status}}">{{.Adjudication.Status}}</span>
+        &nbsp;<span class="ground">{{.Report.Dispute.Ground}}</span>
+        &nbsp;<code>{{.Report.Dispute.ID}}</code>
+      </div>
+      <div class="swing">
+        ΔConf {{f3 .Report.DeltaConfidence}}
+        {{if .Report.RecommendationFlipped}} · <span class="warn">rec flip</span>{{end}}
+        {{if .Report.BlockedByConfounderFlipped}} · <span class="warn">blocked flip</span>{{end}}
+        {{if .Report.TopShapleyChanged}} · <span class="muted">top-φ shift</span>{{end}}
+      </div>
+    </div>
+    <div class="reason">{{.Adjudication.Reason}}</div>
+    {{if .Report.Dispute.Narrative}}<div class="reason">“{{.Report.Dispute.Narrative}}”</div>{{end}}
+    {{if .Report.Notes}}<ul>{{range .Report.Notes}}<li class="muted">{{.}}</li>{{end}}</ul>{{end}}
+    <dl class="kv" style="margin-top:6px">
+      <dt>Original recommendation</dt><dd>{{if .Report.OriginalRecommendation}}<code>{{.Report.OriginalRecommendation}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
+      <dt>Counterfactual recommendation</dt><dd>{{if .Report.CounterfactualRecommendation}}<code>{{.Report.CounterfactualRecommendation}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
+      <dt>Original / CF confidence</dt><dd>{{f3 .Report.OriginalConfidence}} → {{f3 .Report.CounterfactualConfidence}}</dd>
+      <dt>Swing score</dt><dd class="swing">{{f3 .Adjudication.SwingScore}}</dd>
+    </dl>
+  </div>
+  {{end}}
+  {{else}}<div class="muted">No adversarial review attached to this trace.</div>{{end}}
   {{end}}
 </section>
 

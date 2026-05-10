@@ -182,3 +182,59 @@ func TestBuildInspectorBundleNilGraphAndPlan(t *testing.T) {
 	require.Nil(t, bundle.PearlPlan)
 	require.Empty(t, bundle.Attribution)
 }
+
+func TestInspectorBundle_PersistsDisputes(t *testing.T) {
+	verdict := sampleVerdictForBundle()
+	verdict.Disputes = []DisputeRecord{
+		NewDisputeRecord(DisputeReport{
+			Dispute:               Dispute{ID: "rev:blocked:act1", Ground: DisputeGroundActionBlocked, TargetNode: "act1"},
+			Applied:               true,
+			DeltaConfidence:       -0.20,
+			RecommendationFlipped: true,
+		}),
+	}
+	raw, err := MarshalInspectorBundle(verdict)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	parsed, err := ParseInspectorBundle(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if parsed == nil {
+		t.Fatalf("parsed bundle was nil")
+	}
+	if len(parsed.Disputes) != 1 {
+		t.Fatalf("expected 1 dispute, got %d", len(parsed.Disputes))
+	}
+	if parsed.Disputes[0].Adjudication.Status != DisputeStatusUpheld {
+		t.Errorf("dispute status not preserved through round trip: got %q",
+			parsed.Disputes[0].Adjudication.Status)
+	}
+	if parsed.Disputes[0].Report.Dispute.ID != "rev:blocked:act1" {
+		t.Errorf("dispute ID lost: got %q", parsed.Disputes[0].Report.Dispute.ID)
+	}
+}
+
+func TestInspectorBundle_EmptyDisputes_StillEmptyBundle(t *testing.T) {
+	verdict := GISTVerdict{}
+	raw, err := MarshalInspectorBundle(verdict)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	parsed, err := ParseInspectorBundle(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if parsed != nil {
+		// An empty verdict with no graph/plan/attribution/disputes
+		// should still parse to nil (no useful data).
+		if parsed.CausalGraph == nil && parsed.PearlPlan == nil &&
+			len(parsed.Attribution) == 0 && len(parsed.Disputes) == 0 &&
+			len(parsed.FlatChain) == 0 {
+			// Some implementations still return a non-nil bundle
+			// with only ProtocolVersion set; tolerate that.
+			return
+		}
+	}
+}

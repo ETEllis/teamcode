@@ -576,6 +576,7 @@ type GISTVerdict struct {
 	DegradedReason      string               `json:"degradedReason,omitempty"`
 	PearlPlan           *PearlPlan           `json:"pearlPlan,omitempty"`
 	Attribution         []NodeAttribution    `json:"attribution,omitempty"`
+	Disputes            []DisputeRecord      `json:"disputes,omitempty"`
 }
 
 // SyncCausalChain reconciles the typed CausalGraph and the legacy
