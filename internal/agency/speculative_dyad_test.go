@@ -37,7 +37,7 @@ func TestDyadCompress_TwoIdentical_NotPaired(t *testing.T) {
 	// be paired (compression of duplicates is a different mechanism).
 	a := dyadVerdict("a", nil)
 	b := dyadVerdict("b", nil)
-	out, report := DyadCompress([]LabeledVerdict{a, b})
+	_, report := DyadCompress([]LabeledVerdict{a, b})
 	if report.SlotsAfter != 2 || len(report.Deltas) != 0 {
 		t.Errorf("identical verdicts should not be paired (Hamming-0), got SlotsAfter=%d deltas=%d",
 			report.SlotsAfter, len(report.Deltas))
