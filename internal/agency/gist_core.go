@@ -32,6 +32,7 @@ type gistSubprocessOutput struct {
 	Verdict             string               `json:"verdict"`
 	Confidence          float64              `json:"confidence"`
 	CausalChain         []string             `json:"causalChain,omitempty"`
+	CausalGraph         *CausalGraph         `json:"causalGraph,omitempty"`
 	OpenQuestions       []string             `json:"openQuestions,omitempty"`
 	ExecutionIntent     string               `json:"executionIntent"`
 	Intent              *ActionIntent        `json:"intent,omitempty"`
@@ -242,6 +243,7 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 		Verdict:             out.Verdict,
 		Confidence:          out.Confidence,
 		CausalChain:         out.CausalChain,
+		CausalGraph:         out.CausalGraph,
 		OpenQuestions:       out.OpenQuestions,
 		ExecutionIntent:     out.ExecutionIntent,
 		Intent:              out.Intent,
@@ -255,6 +257,12 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 		Counterfactuals:     out.Counterfactuals,
 		ConfidenceBreakdown: out.ConfidenceBreakdown,
 	}
+	// Reconcile the typed graph and the legacy []string view. If the
+	// subprocess emitted a typed CausalGraph (protocolVersion >= 1)
+	// we project it onto CausalChain so legacy consumers stay
+	// deterministic; otherwise we hydrate the graph from the chain so
+	// Pearl-aware consumers always have a typed view.
+	verdict.SyncCausalChain()
 	return verdict, lattice, nil
 }
 
