@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -41,11 +43,60 @@ func main() {
 		q := db.New(conn)
 		cfg.LatticeStore = &dbLatticeStore{q: q}
 		cfg.RoutingLog = &dbRoutingLog{q: q}
+		cfg.GISTTraceStore = &dbGISTTraceStore{q: q}
 	}
 
 	if err := agency.RunActorDaemon(ctx, cfg); err != nil && err != context.Canceled {
 		log.Fatal(err)
 	}
+}
+
+type dbGISTTraceStore struct {
+	q *db.Queries
+}
+
+func (s *dbGISTTraceStore) StoreTrace(ctx context.Context, organizationID, agentID, latticeJSON string, verdict agency.GISTVerdict) error {
+	if verdict.Trace == nil || verdict.Trace.ID == "" {
+		return nil
+	}
+	traceJSON, err := json.Marshal(verdict.Trace)
+	if err != nil {
+		return err
+	}
+	proofJSON := []byte("{}")
+	if verdict.Proof != nil {
+		proofJSON, err = json.Marshal(verdict.Proof)
+		if err != nil {
+			return err
+		}
+	}
+	createdAt := verdict.Trace.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().UnixMilli()
+	}
+	return s.q.InsertAgencyGistTrace(ctx, db.InsertAgencyGistTraceParams{
+		ID:              verdict.Trace.ID,
+		OfficeID:        organizationID,
+		AgentID:         agentID,
+		Verdict:         verdict.Verdict,
+		RiskLevel:       verdict.RiskLevel,
+		Confidence:      verdict.Confidence,
+		TraceJSON:       string(traceJSON),
+		ProofJSON:       string(proofJSON),
+		LatticeJSON:     latticeJSON,
+		InputHash:       verdict.Trace.InputHash,
+		NextLatticeHash: firstNonEmpty(verdict.Trace.NextLatticeHash, verdict.Trace.LatticeHash),
+		CreatedAt:       createdAt,
+	})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // dbLatticeStore is a DB-backed implementation of agency.LatticeStore.

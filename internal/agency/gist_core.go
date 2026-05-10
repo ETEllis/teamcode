@@ -19,11 +19,12 @@ type gistAtom = GISTAtom
 
 // gistSubprocessInput is the JSON envelope sent to the Python subprocess on stdin.
 type gistSubprocessInput struct {
-	AgentID        string        `json:"agentId"`
-	OrganizationID string        `json:"organizationId"`
-	Scope          GISTScopeRef  `json:"scope"`
-	Atoms          []gistAtom    `json:"atoms"`
-	Budget         ElasticBudget `json:"budget"`
+	AgentID        string          `json:"agentId"`
+	OrganizationID string          `json:"organizationId"`
+	Scope          GISTScopeRef    `json:"scope"`
+	Atoms          []gistAtom      `json:"atoms"`
+	PriorLattice   json.RawMessage `json:"priorLattice,omitempty"`
+	Budget         ElasticBudget   `json:"budget"`
 }
 
 // gistSubprocessOutput is the JSON envelope returned by the subprocess on stdout.
@@ -183,22 +184,6 @@ func (g *GISTAgentCore) BuildAtoms(obs ObservationSnapshot, signal WakeSignal) [
 		})
 	}
 
-	if g.latticeJSON != "" && g.latticeJSON != "{}" {
-		atoms = append(atoms, gistAtom{
-			ID:        stableAtomID("lattice_state", g.agentID, g.latticeJSON),
-			Kind:      "lattice_state",
-			Content:   g.latticeJSON,
-			Scope:     "office",
-			SubjectID: g.agentID,
-			Predicate: "has_prior_lattice",
-			Weight:    0.6,
-			Meta: map[string]string{
-				"agentId": g.agentID,
-				"scale":   "office",
-			},
-		})
-	}
-
 	return atoms
 }
 
@@ -214,6 +199,7 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 		OrganizationID: organizationIDFromAtoms(atoms),
 		Scope:          gistScopeFromAtoms(g.agentID, atoms),
 		Atoms:          atoms,
+		PriorLattice:   rawLatticeJSON(g.latticeJSON),
 		Budget:         g.budget,
 	}
 	payload, err := json.Marshal(input)
@@ -403,6 +389,17 @@ func gistScopeFromAtoms(agentID string, atoms []gistAtom) GISTScopeRef {
 		ParentKind:     "office_fractal",
 		ParentID:       officeGISTLatticeKey(orgID),
 	}
+}
+
+func rawLatticeJSON(latticeJSON string) json.RawMessage {
+	latticeJSON = strings.TrimSpace(latticeJSON)
+	if latticeJSON == "" || latticeJSON == "{}" {
+		return nil
+	}
+	if !json.Valid([]byte(latticeJSON)) {
+		return nil
+	}
+	return json.RawMessage(latticeJSON)
 }
 
 // LatticeStore is the persistence interface for per-agent GIST lattice state.

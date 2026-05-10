@@ -550,7 +550,9 @@ func (a *DirectorAgent) dispatchPrompt(ticket DirectorTicket) string {
 User intent:
 %s
 
-Operate as the Agency office, not as a standalone chatbot. Start with a concise status update, identify the next concrete action, and ask for approval before consequential file, shell, network, billing, credential, or publishing operations.`, ticket.Title, ticket.Body)
+Operate as the Agency office, not as a standalone chatbot. Start with a concise status update, identify the next concrete action, and ask for approval before consequential file, shell, network, billing, credential, or publishing operations.
+
+Ask GIST to preserve the causal unknowns: what contradiction, missing evidence, or counterfactual branch would make this unsafe?`, ticket.Title, ticket.Body)
 }
 
 func (a *DirectorAgent) monitorSummary(status DirectorStatus) string {

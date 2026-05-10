@@ -24,6 +24,7 @@ missing V1 requirements.
 | Gate Director autonomy | `DirectorPolicy`, `agency agency director policy`, Director tests | Low-risk tickets may auto-dispatch; higher-risk tickets stay open for review | Done |
 | Add 2026 provider profiles | `scripts/setup`, `internal/agency/provider_compatible.go` | OpenRouter, OpenCode, Zen, Go, LM Studio, LiteLLM, Mistral, xAI, Groq, and more profiles are configurable | Done |
 | Ship first symmetry-faithful GIST kernel | `scripts/gist_subprocess.py`, `GISTLattice`, `GISTTrace`, GIST unit tests | Local deterministic engine emits canonical 64-slot sparse lattice, contradictions, interventions, counterfactual branches, and replay handles | Done |
+| Persist and inspect GIST proof packets | `agency_gist_traces`, `agency agency gist traces`, approval panel metadata | Trace/proof packets are durable, queryable, and surfaced in approval decisions | Done |
 
 ## Decisions Locked
 
@@ -44,6 +45,7 @@ missing V1 requirements.
 | Director is local-first | Done | Portal defaults to `127.0.0.1:8765`; remote exposure is opt-in and token-gated |
 | OpenCode/Zen/Go are provider options | Done | Setup writes OPENCODE/ZEN/GO base URLs and model IDs as OpenAI-compatible provider profiles |
 | GIST is agent-local and office-macro | Done | Actor daemon loads/persists an office lattice key and local agent lattice state; the same verdict grammar feeds prompts and routing |
+| Approval decisions include causal reasons | Done | Approval channel, IPC payloads, and TUI approval cards carry GIST verdict/risk/trace/reason fields |
 
 ## Verified Gates
 
@@ -78,6 +80,7 @@ missing V1 requirements.
 | Director policy tests | `go test ./internal/agency` | Passed; verifies allowed auto-dispatch, high-risk block, and monitor escalation |
 | Director Overmind process | `scripts/release-smoke --with-overmind --skip-static` | Passed; Overmind status includes `director` running before IPC proof |
 | GIST symmetry kernel tests | `go test ./internal/agency` | Passed; verifies deterministic replay, 64-slot sparse activation, contradiction preservation, counterfactual emission, and degraded fallback |
+| GIST trace persistence tests | `go test ./internal/db` | Passed; verifies durable trace/proof insert and office query path |
 
 ## Terminal Live Proof
 

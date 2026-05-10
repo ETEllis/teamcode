@@ -101,6 +101,28 @@ func TestGISTCompressMarksFallbackAsDegradedWhenSubprocessUnavailable(t *testing
 	require.JSONEq(t, "{}", latticeJSON)
 }
 
+func TestGISTBuildAtomsKeepsPriorLatticeOutOfEvidenceAtoms(t *testing.T) {
+	t.Parallel()
+
+	core := NewGISTAgentCore("agent-1", GISTScriptPathForTest(t), DefaultGISTBudget())
+	core.SetLattice(`{"canonicalSlots":64}`)
+	atoms := core.BuildAtoms(ObservationSnapshot{
+		OrganizationID: "org-1",
+		Actor:          AgentIdentity{ID: "agent-1", Role: "engineer", OrganizationID: "org-1"},
+		Resources:      ResourceState{SharedWorkplace: "/tmp/work"},
+	}, WakeSignal{
+		ID:             "signal-1",
+		OrganizationID: "org-1",
+		Channel:        OrganizationChannel("org-1"),
+		Kind:           SignalDirector,
+	})
+
+	for _, atom := range atoms {
+		require.NotEqual(t, "lattice_state", atom.Kind)
+		require.NotEqual(t, "agent_lattice_state", atom.Kind)
+	}
+}
+
 func TestGISTScriptPathResolvesToRepoScriptsEntryPoint(t *testing.T) {
 	t.Setenv("AGENCY_GIST_SCRIPT_PATH", "")
 	wd, err := os.Getwd()

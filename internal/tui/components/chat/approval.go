@@ -181,6 +181,26 @@ func (m *ApprovalCmp) View() string {
 
 		line := fmt.Sprintf("%s  %s  %s", actor, action, ts)
 		rows = append(rows, rowStyle.Render(line))
+		if p.GISTReason != "" || p.GISTTraceID != "" || p.GISTRisk != "" {
+			gistLine := "GIST"
+			if p.GISTRisk != "" {
+				gistLine += " risk=" + p.GISTRisk
+			}
+			if p.GISTVerdict != "" {
+				gistLine += " verdict=" + p.GISTVerdict
+			}
+			if p.GISTTraceID != "" {
+				gistLine += " trace=" + p.GISTTraceID
+			}
+			rows = append(rows, rowStyle.
+				Foreground(t.TextMuted()).
+				Render(gistLine))
+		}
+		if p.GISTReason != "" {
+			rows = append(rows, rowStyle.
+				Foreground(t.TextMuted()).
+				Render("Reason: "+p.GISTReason))
+		}
 	}
 
 	rows = append(rows, "",

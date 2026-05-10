@@ -67,6 +67,11 @@ tickets stay open for review unless you manually dispatch them.
 That gives Director enough agency to keep small work moving while preserving the
 human decision boundary for consequential work.
 
+Director dispatches also ask GIST to preserve causal unknowns explicitly: what
+contradiction, missing evidence, or counterfactual branch would make the request
+unsafe? Those GIST verdict/risk/trace/reason fields flow into the approval lane
+so review sees causal context, not only an action label.
+
 ```bash
 agency agency director policy
 agency agency director submit --risk low --priority normal --dispatch "Summarize the office status"

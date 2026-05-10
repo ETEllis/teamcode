@@ -604,11 +604,15 @@ type BroadcastMsg struct {
 
 // ProposalMsg carries a pending action proposal for TUI approval display.
 type ProposalMsg struct {
-	ProposalID string
-	ActorID    string
-	ActionType string
-	Target     string
-	CreatedAt  int64
+	ProposalID  string
+	ActorID     string
+	ActionType  string
+	Target      string
+	GISTVerdict string
+	GISTRisk    string
+	GISTTraceID string
+	GISTReason  string
+	CreatedAt   int64
 }
 
 // BulletinRecord carries a directive→output→score performance entry for TUI display.
@@ -721,11 +725,15 @@ func (s *AgencyService) SubscribeApprovals(ctx context.Context, orgID string) (<
 				}
 				select {
 				case out <- ProposalMsg{
-					ProposalID: proposalID,
-					ActorID:    sig.ActorID,
-					ActionType: sig.Payload["actionType"],
-					Target:     sig.Payload["target"],
-					CreatedAt:  sig.CreatedAt,
+					ProposalID:  proposalID,
+					ActorID:     sig.ActorID,
+					ActionType:  sig.Payload["actionType"],
+					Target:      sig.Payload["target"],
+					GISTVerdict: sig.Payload["gistVerdict"],
+					GISTRisk:    sig.Payload["gistRisk"],
+					GISTTraceID: sig.Payload["gistTraceId"],
+					GISTReason:  sig.Payload["gistReason"],
+					CreatedAt:   sig.CreatedAt,
 				}:
 				default:
 				}

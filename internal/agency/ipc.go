@@ -52,11 +52,15 @@ type IPCBroadcastPayload struct {
 
 // IPCApprovalPayload carries a pending action proposal.
 type IPCApprovalPayload struct {
-	ProposalID string `json:"proposalId"`
-	ActorID    string `json:"actorId"`
-	ActionType string `json:"actionType"`
-	Target     string `json:"target"`
-	CreatedAt  int64  `json:"createdAt"`
+	ProposalID  string `json:"proposalId"`
+	ActorID     string `json:"actorId"`
+	ActionType  string `json:"actionType"`
+	Target      string `json:"target"`
+	GISTVerdict string `json:"gistVerdict,omitempty"`
+	GISTRisk    string `json:"gistRisk,omitempty"`
+	GISTTraceID string `json:"gistTraceId,omitempty"`
+	GISTReason  string `json:"gistReason,omitempty"`
+	CreatedAt   int64  `json:"createdAt"`
 }
 
 // IPCBulletinPayload carries a performance record.
@@ -219,11 +223,15 @@ func (s *IPCServer) handleConn(ctx context.Context, conn net.Conn) {
 					continue
 				}
 				p, _ := json.Marshal(IPCApprovalPayload{
-					ProposalID: sig.Payload["proposalId"],
-					ActorID:    sig.ActorID,
-					ActionType: sig.Payload["actionType"],
-					Target:     sig.Payload["target"],
-					CreatedAt:  sig.CreatedAt,
+					ProposalID:  sig.Payload["proposalId"],
+					ActorID:     sig.ActorID,
+					ActionType:  sig.Payload["actionType"],
+					Target:      sig.Payload["target"],
+					GISTVerdict: sig.Payload["gistVerdict"],
+					GISTRisk:    sig.Payload["gistRisk"],
+					GISTTraceID: sig.Payload["gistTraceId"],
+					GISTReason:  sig.Payload["gistReason"],
+					CreatedAt:   sig.CreatedAt,
 				})
 				select {
 				case client.send <- IPCMessage{Type: IPCTypeApproval, Payload: p}:

@@ -15,6 +15,10 @@ type RoutingLog interface {
 	LogDecision(ctx context.Context, agentID, orgID string, result InferenceResult, decision RoutingDecision, intent ActionIntent) error
 }
 
+type GISTTraceStore interface {
+	StoreTrace(ctx context.Context, organizationID, agentID, latticeJSON string, verdict GISTVerdict) error
+}
+
 type ActorDaemonConfig struct {
 	BaseDir         string
 	SharedWorkplace string
@@ -26,6 +30,8 @@ type ActorDaemonConfig struct {
 	LatticeStore LatticeStore
 	// RoutingLog persists model routing decisions. Optional.
 	RoutingLog RoutingLog
+	// GISTTraceStore persists replayable GIST trace/proof packets. Optional.
+	GISTTraceStore GISTTraceStore
 	// ExecutionPolicy constrains model selection. Zero value = permissive.
 	ExecutionPolicy ExecutionPolicy
 }
@@ -127,24 +133,6 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 				}
 			}
 			atoms := gistCore.BuildAtoms(observation, signal)
-			if cfg.LatticeStore != nil {
-				if localLattice, err := cfg.LatticeStore.GetLattice(ctx, spec.Identity.ID); err == nil && localLattice != "" && localLattice != "{}" {
-					atoms = append(atoms, gistAtom{
-						ID:        stableAtomID("agent_lattice_state", spec.Identity.ID, localLattice),
-						Kind:      "agent_lattice_state",
-						Content:   localLattice,
-						Scope:     "agent",
-						SubjectID: spec.Identity.ID,
-						Predicate: "has_prior_lattice",
-						Weight:    0.65,
-						Meta: map[string]string{
-							"agentId":        spec.Identity.ID,
-							"organizationId": spec.Identity.OrganizationID,
-							"scale":          "agent",
-						},
-					})
-				}
-			}
 			// Inject prompt_injection directive as high-weight GIST atom (weight 1.5).
 			if injection := signal.Payload["prompt_injection"]; injection != "" {
 				atoms = append(atoms, gistAtom{
@@ -172,6 +160,9 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 				_ = cfg.LatticeStore.SetLattice(ctx, spec.Identity.ID, newLattice)
 			} else {
 				gistCore.SetLattice(newLattice)
+			}
+			if cfg.GISTTraceStore != nil {
+				_ = cfg.GISTTraceStore.StoreTrace(ctx, spec.Identity.OrganizationID, spec.Identity.ID, newLattice, verdict)
 			}
 
 			metadata["gistVerdict"] = verdict.Verdict
@@ -267,6 +258,10 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 						"provider":        inferResult.Provider,
 						"model":           inferResult.ModelID,
 						"executionIntent": verdict.ExecutionIntent,
+						"gistVerdict":     verdict.Verdict,
+						"gistRisk":        verdict.RiskLevel,
+						"gistTraceId":     gistTraceID(verdict),
+						"gistReason":      gistApprovalReason(verdict),
 						"entrySource":     "actor.daemon.routed",
 					},
 				},
@@ -319,6 +314,10 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 							"actorId":     proposals[i].ActorID,
 							"actionType":  string(proposals[i].Type),
 							"target":      proposals[i].Target,
+							"gistVerdict": verdict.Verdict,
+							"gistRisk":    verdict.RiskLevel,
+							"gistTraceId": gistTraceID(verdict),
+							"gistReason":  gistApprovalReason(verdict),
 							"entrySource": "actor.daemon.approval",
 						},
 						CreatedAt: proposals[i].ProposedAt,
@@ -366,6 +365,26 @@ func shouldProcessActorSignal(actorID string, signal WakeSignal) bool {
 		}
 	}
 	return true
+}
+
+func gistTraceID(verdict GISTVerdict) string {
+	if verdict.Trace == nil {
+		return ""
+	}
+	return verdict.Trace.ID
+}
+
+func gistApprovalReason(verdict GISTVerdict) string {
+	if len(verdict.Contradictions) > 0 {
+		return verdict.Contradictions[0].Summary
+	}
+	if len(verdict.OpenQuestions) > 0 {
+		return verdict.OpenQuestions[0]
+	}
+	if verdict.DegradedReason != "" {
+		return verdict.DegradedReason
+	}
+	return verdict.Verdict
 }
 
 func loadActorSpecFromPath(path string) (ActorRuntimeSpec, error) {

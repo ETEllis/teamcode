@@ -136,7 +136,7 @@ WakeSignal → GIST/ReasoningCore → ActionIntent → ModelRouter → ProviderA
 | Stage | What shipped |
 |-------|-------------|
 | **1 — Live Agent Foundation** | DB poll scheduler, broadcast→TUI pipeline, env config, optional voice via Kokoro or macOS `say` fallback |
-| **2 — GIST Cognitive Layer** | `GISTAgentCore`, bundled deterministic `scripts/gist_subprocess.py`, canonical 64-slot sparse lattice, contradiction clusters, intervention/counterfactual branches, replayable `GISTTrace`, per-agent + office macro lattice persistence |
+| **2 — GIST Cognitive Layer** | `GISTAgentCore`, bundled deterministic `scripts/gist_subprocess.py`, canonical 64-slot sparse lattice, contradiction clusters, intervention/counterfactual branches, durable `GISTTrace`/proof storage, per-agent + office macro lattice persistence |
 | **3 — Model Routing Layer** | `ModelRouter` (5 hard gates + soft scoring), `CredentialBroker`, Codex/Anthropic/Ollama/OpenAI/Gemini plus OpenAI-compatible provider profiles, routing audit log |
 | **4 — Core TUI Experience** | iMessage-style bubbles (per-actor color + avatar + timestamp), TTS voice on broadcast, `ApprovalCmp` panel (a/r keys, auto right-rail), approval channel + vote relay |
 | **5 — Nested Temporal Orchestration** | `ScheduleNode` tree with `prompt_injection`, `NestedScheduler`, `PerformanceRecord`, bulletin timeline (directive→output→score), daemon wired: directive → 1.5-weight GIST atom + performance publish |
@@ -299,7 +299,16 @@ go build -o agency .
 
 ### Approval lane
 
-When agents propose actions, the approval panel appears in the right rail automatically. Press `a` to approve, `r` to reject, `↑↓` to navigate.
+When agents propose actions, the approval panel appears in the right rail automatically. Press `a` to approve, `r` to reject, `↑↓` to navigate. Approval cards include GIST verdict, risk, trace ID, and causal reason when available, so consequential actions are inspected through the same causal lattice that produced the agent verdict.
+
+### GIST traces
+
+Agency stores replayable GIST trace/proof packets for the current office. Inspect the latest causal lattice verdicts with:
+
+```bash
+agency agency gist traces
+agency agency gist traces --json
+```
 
 ### Bulletin board
 
@@ -345,6 +354,7 @@ Legacy `.teamcode.json` / `.opencode.json` config files are still read as fallba
 | `internal/agency/types.go` | All domain types including `ScheduleNode`, `ActionProposal`, `WakeSignal` |
 | `internal/agency/gist_core.go` | GIST subprocess manager, atom builder, degraded fallback, office lattice pathing |
 | `scripts/gist_subprocess.py` | Local deterministic GIST kernel: 64-slot lattice, contradictions, counterfactuals, trace output |
+| `internal/db/agency_gist_traces.go` | Durable GIST trace/proof packet storage |
 | `internal/agency/nested_scheduler.go` | Cron tree with prompt injection |
 | `internal/agency/routing.go` | `ModelRouter`, `CredentialBroker`, 5-gate scoring |
 | `internal/agency/performance.go` | `PerformanceRecord`, `BulletinChannel`, `PublishPerformance` |

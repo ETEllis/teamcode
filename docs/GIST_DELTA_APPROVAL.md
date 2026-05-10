@@ -37,6 +37,10 @@ This pass lands the first symmetry-faithful GIST kernel for Agency:
 - degraded fallback explicitly marked as degraded when the engine is unavailable;
 - GIST prompt context expanded beyond a one-line verdict into trace,
   causal-chain, contradiction, counterfactual, and open-question context.
+- durable DB-backed `agency_gist_traces` storage for trace/proof packets;
+- `agency agency gist traces` CLI inspection for recent office traces;
+- approval lane, IPC payloads, and TUI approval cards show GIST verdict, risk,
+  trace ID, and causal reason.
 
 ## Mobius Target
 
@@ -65,8 +69,7 @@ Agency still lacks:
 - confounder/evidence distinction,
 - causal necessity attribution,
 - dispute/adjudication semantics,
-- persisted trace/proof table separate from lattice JSON,
-- inspector-visible reasoning traces in the TUI.
+- full lattice inspector UI beyond approval cards and CLI trace listing.
 
 ## Approval List
 
@@ -102,10 +105,10 @@ Agency still lacks:
    - Score whether an atom was necessary for a downstream outcome.
    - Keep local version simple now; preserve path to OneMind/global attribution later.
 
-9. Add GIST proof packets. **V1 `GISTTrace` done in this pass; durable trace table remains next.**
+9. Add GIST proof packets. **Done.**
    - Persist replayable `GISTTrace` entries: input atoms, graph diff, contradictions, counterfactuals, selected verdict, confidence decomposition.
 
-10. Wire GIST into Director policy and Agency approvals.
+10. Wire GIST into Director policy and Agency approvals. **V1 done.**
    - Director high/unknown risk should ask GIST: "what causal unknowns make this unsafe?"
    - Approval lane should show GIST reason, not just action type.
 

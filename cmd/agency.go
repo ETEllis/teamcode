@@ -9,6 +9,7 @@ import (
 	agencyrt "github.com/ETEllis/teamcode/internal/agency"
 	"github.com/ETEllis/teamcode/internal/app"
 	"github.com/ETEllis/teamcode/internal/config"
+	"github.com/ETEllis/teamcode/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -32,10 +33,75 @@ func newAgencyCmd() *cobra.Command {
 		newAgencyConstitutionCmd(),
 		newAgencySwitchCmd(),
 		newAgencyVoiceCmd(),
+		newAgencyGISTCmd(),
 		newAgencyDirectorCmd(),
 	)
 
 	return cmd
+}
+
+func newAgencyGISTCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gist",
+		Short: "Inspect Agency GIST lattice traces and proof packets",
+	}
+	cmd.AddCommand(newAgencyGISTTracesCmd())
+	return cmd
+}
+
+func newAgencyGISTTracesCmd() *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "traces",
+		Short: "List recent durable GIST trace/proof packets for the current office",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, _ := os.Getwd()
+			bootstrap, err := agencyrt.LoadBootstrap(cwd, os.Getenv("AGENCY_CONSTITUTION_NAME"), agencyrt.RuntimeModeEmbedded, "")
+			if err != nil {
+				return err
+			}
+			conn, err := db.Connect()
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+			traces, err := db.New(conn).ListAgencyGistTracesByOffice(cmd.Context(), bootstrap.Constitution.OrganizationID, limit)
+			if err != nil {
+				return err
+			}
+			if rendered, err := outputJSON(cmd, traces); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			if len(traces) == 0 {
+				fmt.Println("No GIST traces recorded yet.")
+				return nil
+			}
+			for _, trace := range traces {
+				fmt.Printf("%s agent=%s verdict=%s risk=%s confidence=%.2f input=%s lattice=%s\n",
+					trace.ID,
+					trace.AgentID,
+					trace.Verdict,
+					emptyDash(trace.RiskLevel),
+					trace.Confidence,
+					emptyDash(trace.InputHash),
+					emptyDash(trace.NextLatticeHash),
+				)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 10, "Maximum number of traces to list")
+	addJSONFlag(cmd)
+	return cmd
+}
+
+func emptyDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }
 
 func newOfficeCmd() *cobra.Command {
