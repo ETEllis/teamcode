@@ -78,8 +78,8 @@ func newAgencyGISTSpeculativeCmd() *cobra.Command {
 				c := bundle.Convergence
 				fmt.Println("Convergence:")
 				fmt.Printf("  status      %s\n", c.Status)
-				fmt.Printf("  quorum      %d / %d (threshold %.2f)\n",
-					c.QuorumSize, c.TotalPeers, c.Threshold)
+				fmt.Printf("  quorum      %.2f over %d agents (threshold %.2f)\n",
+					c.Quorum, c.AgentCount, c.Threshold)
 				if c.ConsensusRoot != "" {
 					fmt.Printf("  root        %s\n", truncMid(c.ConsensusRoot, 24))
 				}
@@ -87,9 +87,12 @@ func newAgencyGISTSpeculativeCmd() *cobra.Command {
 					fmt.Println("  divergence loci:")
 					for _, l := range c.DivergenceLoci {
 						sevTag := strings.ToUpper(string(l.Severity))
-						fmt.Printf("    [%s] %s   missing-on=%v   extra-on=%v\n",
-							sevTag, l.LeafHash[:min(16, len(l.LeafHash))]+"…",
-							l.MissingOn, l.ExtraOn)
+						leaf := l.LeafHash
+						if len(leaf) > 16 {
+							leaf = leaf[:16] + "\u2026"
+						}
+						fmt.Printf("    [%s] %s   exclusion=%v   inclusion=%v\n",
+							sevTag, leaf, l.Exclusion, l.Inclusion)
 					}
 				}
 				fmt.Println()
@@ -99,15 +102,19 @@ func newAgencyGISTSpeculativeCmd() *cobra.Command {
 				r := bundle.Reconciliation
 				fmt.Println("Reconciliation:")
 				fmt.Printf("  status      %s\n", r.Status)
-				fmt.Printf("  coverage    %.2f\n", r.Coverage)
-				if len(r.UnsupportedNodes) > 0 {
-					fmt.Printf("  unsupported %v\n", r.UnsupportedNodes)
+				fmt.Printf("  support     %.2f   coverage %.2f   drift %.2f\n",
+					r.SupportScore, r.CoverageScore, r.DriftScore)
+				if len(r.UnsupportedIDs) > 0 {
+					fmt.Printf("  unsupported %v\n", r.UnsupportedIDs)
 				}
-				if len(r.Nodes) > 0 {
+				if len(r.UncoveredIDs) > 0 {
+					fmt.Printf("  uncovered   %v\n", r.UncoveredIDs)
+				}
+				if len(r.NodeReports) > 0 {
 					fmt.Println("  nodes:")
-					for _, n := range r.Nodes {
-						fmt.Printf("    [%-11s] %-22s support=%.2f\n",
-							n.Status, string(n.NodeID), n.Support)
+					for _, n := range r.NodeReports {
+						fmt.Printf("    %-22s peer-support=%.2f  role-agreement=%.2f  weight-delta=%+.2f\n",
+							string(n.NodeID), n.PeerSupport, n.RoleAgreement, n.WeightDelta)
 					}
 				}
 				fmt.Println()
@@ -117,13 +124,29 @@ func newAgencyGISTSpeculativeCmd() *cobra.Command {
 				d := bundle.Dyads
 				saved := d.SlotsBefore - d.SlotsAfter
 				fmt.Println("Dyad compression:")
-				fmt.Printf("  slots       %d → %d  (saved %d)\n",
+				fmt.Printf("  slots       %d \u2192 %d  (saved %d)\n",
 					d.SlotsBefore, d.SlotsAfter, saved)
 				fmt.Printf("  pairs       %d\n", len(d.Deltas))
 				for _, dl := range d.Deltas {
-					fmt.Printf("    %s : base=%s  sib=%s  shape=%s\n",
-						truncMid(dl.MerkleRootBase, 12), dl.BaseAgentID,
-						dl.SiblingAgentID, dl.Shape)
+					shape := "unknown"
+					switch {
+					case dl.NodeMutation != nil:
+						shape = "mutation"
+					case dl.NodeAdded != nil:
+						shape = "added"
+					case dl.NodeRemoved != nil:
+						shape = "removed"
+					}
+					fmt.Printf("    base=%-12s  sib=%-12s  shape=%s\n",
+						truncMid(dl.BaseVerdictID, 16),
+						truncMid(dl.SiblingVerdictID, 16),
+						shape)
+					if dl.LeafReplaced != "" {
+						fmt.Printf("      leaf replaced: %s\n", truncMid(dl.LeafReplaced, 24))
+					}
+					if dl.LeafIntroduced != "" {
+						fmt.Printf("      leaf introduced: %s\n", truncMid(dl.LeafIntroduced, 24))
+					}
 				}
 				fmt.Println()
 			}
@@ -168,11 +191,4 @@ func truncMid(s string, n int) string {
 	}
 	half := (n - 1) / 2
 	return s[:half] + "…" + s[len(s)-half:]
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
