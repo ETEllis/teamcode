@@ -74,6 +74,16 @@ func (s *dbGISTTraceStore) StoreTrace(ctx context.Context, organizationID, agent
 	if createdAt == 0 {
 		createdAt = time.Now().UnixMilli()
 	}
+	// Build the lattice-inspector envelope alongside the legacy blobs so
+	// the Director portal can render /lattice/<trace_id> without having
+	// to re-run the kernel. A marshal failure here MUST NOT lose the
+	// rest of the trace - we degrade to "{}" and log, then continue.
+	inspectorJSON, inspErr := agency.MarshalInspectorBundle(verdict)
+	if inspErr != nil {
+		log.Printf("actor-daemon: inspector bundle marshal failed for trace %s: %v",
+			verdict.Trace.ID, inspErr)
+		inspectorJSON = "{}"
+	}
 	return s.q.InsertAgencyGistTrace(ctx, db.InsertAgencyGistTraceParams{
 		ID:              verdict.Trace.ID,
 		OfficeID:        organizationID,
@@ -84,6 +94,7 @@ func (s *dbGISTTraceStore) StoreTrace(ctx context.Context, organizationID, agent
 		TraceJSON:       string(traceJSON),
 		ProofJSON:       string(proofJSON),
 		LatticeJSON:     latticeJSON,
+		InspectorJSON:   inspectorJSON,
 		InputHash:       verdict.Trace.InputHash,
 		NextLatticeHash: firstNonEmpty(verdict.Trace.NextLatticeHash, verdict.Trace.LatticeHash),
 		CreatedAt:       createdAt,
