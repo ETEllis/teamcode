@@ -155,7 +155,7 @@ func TestReviewer_SortsUpheldFirst(t *testing.T) {
 		curr := statusRank(rec.Adjudication.Status)
 		if curr < prev {
 			t.Errorf("records out of status order: %s came after %s",
-				rec.Adjudication.Status, statusRank(records[0].Adjudication.Status))
+				rec.Adjudication.Status, records[0].Adjudication.Status)
 		}
 		prev = curr
 	}

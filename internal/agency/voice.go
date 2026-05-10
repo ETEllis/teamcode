@@ -419,7 +419,7 @@ func (g *VoiceGateway) Serve(ctx context.Context, organizationID string) error {
 			}
 			status, err := g.Status(ctx, organizationID)
 			if err == nil {
-				status.LastVoiceEvent = status.LastVoiceEvent
+				// Touch persistence so status timestamps reflect this tick.
 				_ = g.persistStatus(status)
 			}
 		case _, ok := <-synthesisCh:
@@ -598,7 +598,14 @@ func withSpeechTimeout(ctx context.Context, timeout time.Duration) context.Conte
 	if timeout <= 0 {
 		return ctx
 	}
-	runCtx, _ := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	// Cancel when the derived context expires so the timer is released.
+	// This callsite does not need to hold the cancel func — the goroutine
+	// guarantees it runs once at the natural end of the lifetime.
+	go func() {
+		<-runCtx.Done()
+		cancel()
+	}()
 	return runCtx
 }
 
