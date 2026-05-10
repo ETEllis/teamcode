@@ -1,0 +1,14 @@
+=== go env ===
+go1.25.9
+/home/runner/work/agency/agency/go.mod
+/home/runner/go
+
+=== go mod download ===
+mod-download exit: 0
+
+=== go vet ./... ===
+vet exit: 0
+
+=== go build ./... ===
+build exit: 0
+FINAL: vet=0 build=0
