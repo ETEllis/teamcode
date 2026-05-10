@@ -23,6 +23,7 @@ missing V1 requirements.
 | Add personal Director agent | `agency agency director ...`, `agency-director-daemon`, `docs/DIRECTOR.md` | Director opens tickets, dispatches structured wake signals, monitors Agency, and serves a local portal | Done |
 | Gate Director autonomy | `DirectorPolicy`, `agency agency director policy`, Director tests | Low-risk tickets may auto-dispatch; higher-risk tickets stay open for review | Done |
 | Add 2026 provider profiles | `scripts/setup`, `internal/agency/provider_compatible.go` | OpenRouter, OpenCode, Zen, Go, LM Studio, LiteLLM, Mistral, xAI, Groq, and more profiles are configurable | Done |
+| Ship first symmetry-faithful GIST kernel | `scripts/gist_subprocess.py`, `GISTLattice`, `GISTTrace`, GIST unit tests | Local deterministic engine emits canonical 64-slot sparse lattice, contradictions, interventions, counterfactual branches, and replay handles | Done |
 
 ## Decisions Locked
 
@@ -42,6 +43,7 @@ missing V1 requirements.
 | CI smoke path is public | Done | `.github/workflows/release-smoke.yml` runs static release smoke plus Redis IPC live smoke |
 | Director is local-first | Done | Portal defaults to `127.0.0.1:8765`; remote exposure is opt-in and token-gated |
 | OpenCode/Zen/Go are provider options | Done | Setup writes OPENCODE/ZEN/GO base URLs and model IDs as OpenAI-compatible provider profiles |
+| GIST is agent-local and office-macro | Done | Actor daemon loads/persists an office lattice key and local agent lattice state; the same verdict grammar feeds prompts and routing |
 
 ## Verified Gates
 
@@ -75,6 +77,7 @@ missing V1 requirements.
 | Director CLI status | `./agency agency director status --json` | Passed; reports `personal-director` identity and current ledger state |
 | Director policy tests | `go test ./internal/agency` | Passed; verifies allowed auto-dispatch, high-risk block, and monitor escalation |
 | Director Overmind process | `scripts/release-smoke --with-overmind --skip-static` | Passed; Overmind status includes `director` running before IPC proof |
+| GIST symmetry kernel tests | `go test ./internal/agency` | Passed; verifies deterministic replay, 64-slot sparse activation, contradiction preservation, counterfactual emission, and degraded fallback |
 
 ## Terminal Live Proof
 

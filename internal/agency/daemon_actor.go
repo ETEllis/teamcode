@@ -121,17 +121,46 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 				DefaultGISTBudget(),
 			)
 			if cfg.LatticeStore != nil {
-				if lattice, err := cfg.LatticeStore.GetLattice(ctx, spec.Identity.ID); err == nil {
+				officeKey := officeGISTLatticeKey(spec.Identity.OrganizationID)
+				if lattice, err := cfg.LatticeStore.GetLattice(ctx, officeKey); err == nil {
 					gistCore.SetLattice(lattice)
 				}
 			}
 			atoms := gistCore.BuildAtoms(observation, signal)
+			if cfg.LatticeStore != nil {
+				if localLattice, err := cfg.LatticeStore.GetLattice(ctx, spec.Identity.ID); err == nil && localLattice != "" && localLattice != "{}" {
+					atoms = append(atoms, gistAtom{
+						ID:        stableAtomID("agent_lattice_state", spec.Identity.ID, localLattice),
+						Kind:      "agent_lattice_state",
+						Content:   localLattice,
+						Scope:     "agent",
+						SubjectID: spec.Identity.ID,
+						Predicate: "has_prior_lattice",
+						Weight:    0.65,
+						Meta: map[string]string{
+							"agentId":        spec.Identity.ID,
+							"organizationId": spec.Identity.OrganizationID,
+							"scale":          "agent",
+						},
+					})
+				}
+			}
 			// Inject prompt_injection directive as high-weight GIST atom (weight 1.5).
 			if injection := signal.Payload["prompt_injection"]; injection != "" {
 				atoms = append(atoms, gistAtom{
-					Kind:    "directive",
-					Content: injection,
-					Weight:  1.5,
+					ID:        stableAtomID("directive", signal.ID, injection),
+					Kind:      "directive",
+					Content:   injection,
+					Scope:     "event",
+					SubjectID: signal.ID,
+					Predicate: "directs",
+					Value:     injection,
+					Weight:    1.5,
+					Meta: map[string]string{
+						"signalId":       signal.ID,
+						"organizationId": signal.OrganizationID,
+						"scale":          "event",
+					},
 				})
 			}
 			verdict, newLattice, _ := gistCore.Compress(ctx, atoms)
@@ -139,6 +168,7 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 
 			// Persist updated lattice state.
 			if cfg.LatticeStore != nil {
+				_ = cfg.LatticeStore.SetLattice(ctx, officeGISTLatticeKey(spec.Identity.OrganizationID), newLattice)
 				_ = cfg.LatticeStore.SetLattice(ctx, spec.Identity.ID, newLattice)
 			} else {
 				gistCore.SetLattice(newLattice)
@@ -146,17 +176,34 @@ func RunActorDaemon(ctx context.Context, cfg ActorDaemonConfig) error {
 
 			metadata["gistVerdict"] = verdict.Verdict
 			metadata["gistConfidence"] = fmt.Sprintf("%.2f", verdict.Confidence)
+			metadata["gistRisk"] = verdict.RiskLevel
+			if verdict.Trace != nil {
+				metadata["gistTraceId"] = verdict.Trace.ID
+			}
 
 			// Build inference request from GIST verdict + role context.
 			prompter := NewLLMActorProposer(DefaultActorLLMConfig())
 			prompter.SetGISTContext(verdict)
 			systemPrompt := prompter.BuildSystemPrompt(observation, roleSpec)
 			userMessage := prompter.BuildUserMessage(observation, signal)
-			intent := ActionIntent{
-				TaskType:        verdict.ExecutionIntent,
-				Complexity:      verdict.Confidence,
-				LatencyBudgetMs: 5000,
-				PrivacyLevel:    cfg.ExecutionPolicy.PrivacyLevel,
+			intent := ActionIntent{}
+			if verdict.Intent != nil {
+				intent = *verdict.Intent
+			}
+			if intent.TaskType == "" {
+				intent.TaskType = verdict.ExecutionIntent
+			}
+			if intent.Complexity == 0 {
+				intent.Complexity = verdict.Confidence
+			}
+			if intent.LatencyBudgetMs == 0 {
+				intent.LatencyBudgetMs = 5000
+			}
+			if intent.PrivacyLevel == "" {
+				intent.PrivacyLevel = cfg.ExecutionPolicy.PrivacyLevel
+			}
+			if len(intent.RequiredTools) == 0 {
+				intent.RequiredTools = verdict.RequiredTools
 			}
 			inferReq := InferenceRequest{
 				System:      systemPrompt,

@@ -386,13 +386,188 @@ type ElasticBudget struct {
 	StretchFactor   float64 `json:"stretchFactor,omitempty"`
 }
 
+type GISTScopeRef struct {
+	Kind           string `json:"kind"`
+	OrganizationID string `json:"organizationId"`
+	AgentID        string `json:"agentId,omitempty"`
+	ParentKind     string `json:"parentKind,omitempty"`
+	ParentID       string `json:"parentId,omitempty"`
+}
+
+type GISTAtom struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	Content    string            `json:"content,omitempty"`
+	Scope      string            `json:"scope,omitempty"`
+	SubjectID  string            `json:"subjectId,omitempty"`
+	Predicate  string            `json:"predicate,omitempty"`
+	ObjectID   string            `json:"objectId,omitempty"`
+	Value      string            `json:"value,omitempty"`
+	Weight     float64           `json:"weight,omitempty"`
+	Confidence float64           `json:"confidence,omitempty"`
+	SlotHint   string            `json:"slotHint,omitempty"`
+	SourceRefs []string          `json:"sourceRefs,omitempty"`
+	Meta       map[string]string `json:"meta,omitempty"`
+}
+
+// GISTLattice is the canonical 64-slot causal lattice. Runtime activation may
+// be sparse, but the 4x4x4 geometry is always present in the state contract.
+type GISTLattice struct {
+	Version           string       `json:"version"`
+	Scope             GISTScopeRef `json:"scope"`
+	CanonicalSlots    int          `json:"canonicalSlots"`
+	Slots             []GISTSlot   `json:"slots"`
+	ActiveSlots       []string     `json:"activeSlots,omitempty"`
+	ParentLatticeHash string       `json:"parentLatticeHash,omitempty"`
+	LastTraceID       string       `json:"lastTraceId,omitempty"`
+	UpdatedAt         int64        `json:"updatedAt"`
+}
+
+type GISTSlot struct {
+	ID               string             `json:"id"`
+	Index            int                `json:"index"`
+	Temporal         string             `json:"temporal"`
+	Abstraction      string             `json:"abstraction"`
+	Evidence         string             `json:"evidence"`
+	Bits             string             `json:"bits"`
+	Active           bool               `json:"active"`
+	Summary          string             `json:"summary,omitempty"`
+	AtomRefs         []string           `json:"atomRefs,omitempty"`
+	ContradictionIDs []string           `json:"contradictionIds,omitempty"`
+	Weight           float64            `json:"weight,omitempty"`
+	Metrics          map[string]float64 `json:"metrics,omitempty"`
+}
+
+// GISTTrace is the replayable packet emitted by each causal compression wake.
+type GISTTrace struct {
+	ID                  string             `json:"id"`
+	AgentID             string             `json:"agentId"`
+	OrganizationID      string             `json:"organizationId"`
+	Scope               GISTScopeRef       `json:"scope"`
+	SignalID            string             `json:"signalId,omitempty"`
+	LedgerSequence      int64              `json:"ledgerSequence,omitempty"`
+	Atoms               []GISTAtom         `json:"atoms,omitempty"`
+	AtomCount           int                `json:"atomCount"`
+	InputHash           string             `json:"inputHash"`
+	PrevLatticeHash     string             `json:"prevLatticeHash,omitempty"`
+	NextLatticeHash     string             `json:"nextLatticeHash,omitempty"`
+	LatticeHash         string             `json:"latticeHash,omitempty"`
+	ActiveSlots         []string           `json:"activeSlots,omitempty"`
+	TriadClosures       []GISTClosure      `json:"triadClosures,omitempty"`
+	DyadClosures        []GISTClosure      `json:"dyadClosures,omitempty"`
+	ContradictionIDs    []string           `json:"contradictionIds,omitempty"`
+	InterventionIDs     []string           `json:"interventionIds,omitempty"`
+	CounterfactualIDs   []string           `json:"counterfactualIds,omitempty"`
+	LatticeDiff         *GISTLatticeDiff   `json:"latticeDiff,omitempty"`
+	SelectedChain       []string           `json:"selectedChain,omitempty"`
+	SelectedVerdict     string             `json:"selectedVerdict,omitempty"`
+	ConfidenceBreakdown map[string]float64 `json:"confidenceBreakdown,omitempty"`
+	ReplayHandle        string             `json:"replayHandle,omitempty"`
+	CreatedAt           int64              `json:"createdAt"`
+}
+
+type GISTClosure struct {
+	ID            string   `json:"id"`
+	Kind          string   `json:"kind,omitempty"`
+	Arity         int      `json:"arity,omitempty"`
+	Relation      string   `json:"relation,omitempty"`
+	SlotIDs       []string `json:"slotIds,omitempty"`
+	InputSlotIDs  []string `json:"inputSlotIds,omitempty"`
+	AtomRefs      []string `json:"atomRefs,omitempty"`
+	InputAtomRefs []string `json:"inputAtomRefs,omitempty"`
+	OutputSlotID  string   `json:"outputSlotId,omitempty"`
+	Summary       string   `json:"summary,omitempty"`
+	Weight        float64  `json:"weight,omitempty"`
+	Score         float64  `json:"score,omitempty"`
+	Selected      bool     `json:"selected,omitempty"`
+}
+
+type GISTContradiction struct {
+	ID             string   `json:"id"`
+	Kind           string   `json:"kind,omitempty"`
+	Summary        string   `json:"summary"`
+	Severity       string   `json:"severity"`
+	Status         string   `json:"status,omitempty"`
+	Atoms          []string `json:"atoms,omitempty"`
+	AtomRefs       []string `json:"atomRefs,omitempty"`
+	SlotIDs        []string `json:"slotIds,omitempty"`
+	EvidenceNeeded []string `json:"evidenceNeeded,omitempty"`
+	Blocking       bool     `json:"blocking,omitempty"`
+}
+
+type GISTIntervention struct {
+	ID              string   `json:"id"`
+	Label           string   `json:"label,omitempty"`
+	ActionAtomRef   string   `json:"actionAtomRef,omitempty"`
+	Do              string   `json:"do"`
+	Assumptions     []string `json:"assumptions,omitempty"`
+	ExpectedEffects []string `json:"expectedEffects,omitempty"`
+	Risks           []string `json:"risks,omitempty"`
+	Confidence      float64  `json:"confidence,omitempty"`
+}
+
+type GISTCounterfactual struct {
+	ID              string   `json:"id"`
+	InterventionID  string   `json:"interventionId,omitempty"`
+	BranchKind      string   `json:"branchKind,omitempty"`
+	If              string   `json:"if"`
+	Then            string   `json:"then"`
+	Risk            string   `json:"risk,omitempty"`
+	RiskLevel       string   `json:"riskLevel,omitempty"`
+	ExpectedUtility float64  `json:"expectedUtility,omitempty"`
+	Unknowns        []string `json:"unknowns,omitempty"`
+	EvidenceNeeded  []string `json:"evidenceNeeded,omitempty"`
+	Tests           []string `json:"tests,omitempty"`
+}
+
+type GISTSlotDelta struct {
+	SlotID          string             `json:"slotId"`
+	AddedAtomRefs   []string           `json:"addedAtomRefs,omitempty"`
+	RemovedAtomRefs []string           `json:"removedAtomRefs,omitempty"`
+	WeightDelta     float64            `json:"weightDelta,omitempty"`
+	MetricDelta     map[string]float64 `json:"metricDelta,omitempty"`
+}
+
+type GISTLatticeDiff struct {
+	ActivatedSlots   []string        `json:"activatedSlots,omitempty"`
+	DeactivatedSlots []string        `json:"deactivatedSlots,omitempty"`
+	UpdatedSlots     []GISTSlotDelta `json:"updatedSlots,omitempty"`
+}
+
+type GISTProofPacket struct {
+	Version             string             `json:"version"`
+	TraceID             string             `json:"traceId"`
+	Verdict             string             `json:"verdict"`
+	Confidence          float64            `json:"confidence"`
+	InputHash           string             `json:"inputHash"`
+	PrevLatticeHash     string             `json:"prevLatticeHash,omitempty"`
+	NextLatticeHash     string             `json:"nextLatticeHash,omitempty"`
+	LatticeDiff         *GISTLatticeDiff   `json:"latticeDiff,omitempty"`
+	ContradictionIDs    []string           `json:"contradictionIds,omitempty"`
+	InterventionIDs     []string           `json:"interventionIds,omitempty"`
+	CounterfactualIDs   []string           `json:"counterfactualIds,omitempty"`
+	ConfidenceBreakdown map[string]float64 `json:"confidenceBreakdown,omitempty"`
+}
+
 // GISTVerdict is the output of the GIST causal compression step.
 type GISTVerdict struct {
-	Verdict         string   `json:"verdict"`
-	Confidence      float64  `json:"confidence"`
-	CausalChain     []string `json:"causalChain,omitempty"`
-	OpenQuestions   []string `json:"openQuestions,omitempty"`
-	ExecutionIntent string   `json:"executionIntent"`
+	Verdict             string               `json:"verdict"`
+	Confidence          float64              `json:"confidence"`
+	CausalChain         []string             `json:"causalChain,omitempty"`
+	OpenQuestions       []string             `json:"openQuestions,omitempty"`
+	ExecutionIntent     string               `json:"executionIntent"`
+	Intent              *ActionIntent        `json:"intent,omitempty"`
+	RiskLevel           string               `json:"riskLevel,omitempty"`
+	RequiredTools       []string             `json:"requiredTools,omitempty"`
+	Lattice             *GISTLattice         `json:"lattice,omitempty"`
+	Trace               *GISTTrace           `json:"trace,omitempty"`
+	Proof               *GISTProofPacket     `json:"proof,omitempty"`
+	Contradictions      []GISTContradiction  `json:"contradictions,omitempty"`
+	Interventions       []GISTIntervention   `json:"interventions,omitempty"`
+	Counterfactuals     []GISTCounterfactual `json:"counterfactuals,omitempty"`
+	ConfidenceBreakdown map[string]float64   `json:"confidenceBreakdown,omitempty"`
+	Degraded            bool                 `json:"degraded,omitempty"`
+	DegradedReason      string               `json:"degradedReason,omitempty"`
 }
 
 // ActionIntent carries model routing requirements derived from a GISTVerdict.

@@ -141,8 +141,32 @@ func (p *LLMActorProposer) buildSystemPrompt(obs ObservationSnapshot, role RoleS
 	}
 	gistPrefix := ""
 	if p.gistVerdict != nil && strings.TrimSpace(p.gistVerdict.Verdict) != "" {
-		gistPrefix = fmt.Sprintf("GIST context: %s (confidence %.0f%%)\n\n",
-			p.gistVerdict.Verdict, p.gistVerdict.Confidence*100)
+		gistPrefix = fmt.Sprintf("GIST context: %s (confidence %.0f%%, risk %s)\n",
+			p.gistVerdict.Verdict, p.gistVerdict.Confidence*100, emptyDefault(p.gistVerdict.RiskLevel, "unknown"))
+		if p.gistVerdict.Trace != nil && p.gistVerdict.Trace.ID != "" {
+			gistPrefix += fmt.Sprintf("GIST trace: %s\n", p.gistVerdict.Trace.ID)
+		}
+		if len(p.gistVerdict.CausalChain) > 0 {
+			gistPrefix += fmt.Sprintf("Causal chain: %s\n", strings.Join(p.gistVerdict.CausalChain, " -> "))
+		}
+		if len(p.gistVerdict.Contradictions) > 0 {
+			parts := make([]string, 0, len(p.gistVerdict.Contradictions))
+			for _, c := range p.gistVerdict.Contradictions {
+				parts = append(parts, fmt.Sprintf("%s:%s", c.Severity, c.Summary))
+			}
+			gistPrefix += fmt.Sprintf("Contradictions: %s\n", strings.Join(parts, "; "))
+		}
+		if len(p.gistVerdict.Counterfactuals) > 0 {
+			parts := make([]string, 0, len(p.gistVerdict.Counterfactuals))
+			for _, cf := range p.gistVerdict.Counterfactuals {
+				parts = append(parts, fmt.Sprintf("if %s then %s", cf.If, cf.Then))
+			}
+			gistPrefix += fmt.Sprintf("Counterfactuals: %s\n", strings.Join(parts, "; "))
+		}
+		if len(p.gistVerdict.OpenQuestions) > 0 {
+			gistPrefix += fmt.Sprintf("Open causal questions: %s\n", strings.Join(p.gistVerdict.OpenQuestions, "; "))
+		}
+		gistPrefix += "\n"
 	}
 	return fmt.Sprintf(`%s%s
 
@@ -158,6 +182,13 @@ Be direct, professional, and specific to your role.`,
 		obs.Resources.SharedWorkplace,
 		obs.LedgerSequence,
 	)
+}
+
+func emptyDefault(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func (p *LLMActorProposer) buildUserMessage(obs ObservationSnapshot, signal WakeSignal) string {

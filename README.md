@@ -108,9 +108,9 @@ Agency uses a command-center palette: Ledger Ink `#101114`, Signal Gold `#E2B76D
 └────────────────────────┬────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────┐
-│  GIST COGNITIVE LAYER  (per-agent)                       │
-│  Causal compression · ElasticStretch · Lattice state     │
-│  Outputs: GISTVerdict + execution_intent                 │
+│  GIST COGNITIVE LAYER  (agent + office macro)            │
+│  64-slot causal lattice · contradictions · counterfactuals│
+│  Outputs: GISTVerdict + GISTTrace + execution_intent     │
 └────────────────────────┬────────────────────────────────┘
                          │ ActionIntent
 ┌────────────────────────▼────────────────────────────────┐
@@ -136,7 +136,7 @@ WakeSignal → GIST/ReasoningCore → ActionIntent → ModelRouter → ProviderA
 | Stage | What shipped |
 |-------|-------------|
 | **1 — Live Agent Foundation** | DB poll scheduler, broadcast→TUI pipeline, env config, optional voice via Kokoro or macOS `say` fallback |
-| **2 — GIST Cognitive Layer** | `GISTAgentCore`, causal compression, `ElasticStretch`, `LatticeStore`, per-wake lattice persistence |
+| **2 — GIST Cognitive Layer** | `GISTAgentCore`, bundled deterministic `scripts/gist_subprocess.py`, canonical 64-slot sparse lattice, contradiction clusters, intervention/counterfactual branches, replayable `GISTTrace`, per-agent + office macro lattice persistence |
 | **3 — Model Routing Layer** | `ModelRouter` (5 hard gates + soft scoring), `CredentialBroker`, Codex/Anthropic/Ollama/OpenAI/Gemini plus OpenAI-compatible provider profiles, routing audit log |
 | **4 — Core TUI Experience** | iMessage-style bubbles (per-actor color + avatar + timestamp), TTS voice on broadcast, `ApprovalCmp` panel (a/r keys, auto right-rail), approval channel + vote relay |
 | **5 — Nested Temporal Orchestration** | `ScheduleNode` tree with `prompt_injection`, `NestedScheduler`, `PerformanceRecord`, bulletin timeline (directive→output→score), daemon wired: directive → 1.5-weight GIST atom + performance publish |
@@ -343,7 +343,8 @@ Legacy `.teamcode.json` / `.opencode.json` config files are still read as fallba
 |------|------|
 | `internal/agency/daemon_actor.go` | Actor main loop: GIST -> routing -> proposals -> ledger -> bus |
 | `internal/agency/types.go` | All domain types including `ScheduleNode`, `ActionProposal`, `WakeSignal` |
-| `internal/agency/gist_core.go` | GIST subprocess manager + elastic stretch |
+| `internal/agency/gist_core.go` | GIST subprocess manager, atom builder, degraded fallback, office lattice pathing |
+| `scripts/gist_subprocess.py` | Local deterministic GIST kernel: 64-slot lattice, contradictions, counterfactuals, trace output |
 | `internal/agency/nested_scheduler.go` | Cron tree with prompt injection |
 | `internal/agency/routing.go` | `ModelRouter`, `CredentialBroker`, 5-gate scoring |
 | `internal/agency/performance.go` | `PerformanceRecord`, `BulletinChannel`, `PublishPerformance` |

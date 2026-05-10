@@ -3,6 +3,7 @@ package agency
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,30 +13,38 @@ import (
 	"time"
 )
 
-// gistAtom is a single causal fact fed into the GIST subprocess.
-type gistAtom struct {
-	Kind    string            `json:"kind"`
-	Content string            `json:"content"`
-	Weight  float64           `json:"weight,omitempty"`
-	Meta    map[string]string `json:"meta,omitempty"`
-}
+// gistAtom keeps existing internal call sites compact while the public
+// subprocess contract exposes GISTAtom.
+type gistAtom = GISTAtom
 
 // gistSubprocessInput is the JSON envelope sent to the Python subprocess on stdin.
 type gistSubprocessInput struct {
-	AgentID string      `json:"agentId"`
-	Atoms   []gistAtom  `json:"atoms"`
-	Budget  ElasticBudget `json:"budget"`
+	AgentID        string        `json:"agentId"`
+	OrganizationID string        `json:"organizationId"`
+	Scope          GISTScopeRef  `json:"scope"`
+	Atoms          []gistAtom    `json:"atoms"`
+	Budget         ElasticBudget `json:"budget"`
 }
 
 // gistSubprocessOutput is the JSON envelope returned by the subprocess on stdout.
 type gistSubprocessOutput struct {
-	Verdict     string   `json:"verdict"`
-	Confidence  float64  `json:"confidence"`
-	CausalChain []string `json:"causalChain,omitempty"`
-	OpenQuestions []string `json:"openQuestions,omitempty"`
-	ExecutionIntent string `json:"executionIntent"`
-	LatticeJSON string   `json:"latticeJson,omitempty"`
-	Error       string   `json:"error,omitempty"`
+	Verdict             string               `json:"verdict"`
+	Confidence          float64              `json:"confidence"`
+	CausalChain         []string             `json:"causalChain,omitempty"`
+	OpenQuestions       []string             `json:"openQuestions,omitempty"`
+	ExecutionIntent     string               `json:"executionIntent"`
+	Intent              *ActionIntent        `json:"intent,omitempty"`
+	RiskLevel           string               `json:"riskLevel,omitempty"`
+	RequiredTools       []string             `json:"requiredTools,omitempty"`
+	Lattice             *GISTLattice         `json:"lattice,omitempty"`
+	Trace               *GISTTrace           `json:"trace,omitempty"`
+	Proof               *GISTProofPacket     `json:"proof,omitempty"`
+	Contradictions      []GISTContradiction  `json:"contradictions,omitempty"`
+	Interventions       []GISTIntervention   `json:"interventions,omitempty"`
+	Counterfactuals     []GISTCounterfactual `json:"counterfactuals,omitempty"`
+	ConfidenceBreakdown map[string]float64   `json:"confidenceBreakdown,omitempty"`
+	LatticeJSON         string               `json:"latticeJson,omitempty"`
+	Error               string               `json:"error,omitempty"`
 }
 
 // GISTAgentCore manages the per-agent GIST Python subprocess.
@@ -92,43 +101,101 @@ func DefaultGISTBudget() ElasticBudget {
 func (g *GISTAgentCore) BuildAtoms(obs ObservationSnapshot, signal WakeSignal) []gistAtom {
 	atoms := []gistAtom{
 		{
-			Kind:    "actor_identity",
-			Content: fmt.Sprintf("role=%s id=%s", obs.Actor.Role, obs.Actor.ID),
-			Weight:  1.0,
+			ID:        stableAtomID("actor_identity", obs.Actor.ID),
+			Kind:      "actor_identity",
+			Content:   fmt.Sprintf("role=%s id=%s", obs.Actor.Role, obs.Actor.ID),
+			Scope:     "agent",
+			SubjectID: obs.Actor.ID,
+			Predicate: "has_role",
+			Value:     obs.Actor.Role,
+			Weight:    1.0,
+			Meta: map[string]string{
+				"agentId":        obs.Actor.ID,
+				"organizationId": obs.OrganizationID,
+				"scale":          "agent",
+			},
 		},
 		{
-			Kind:    "signal",
-			Content: fmt.Sprintf("kind=%s channel=%s id=%s", signal.Kind, signal.Channel, signal.ID),
-			Weight:  0.9,
+			ID:        stableAtomID("signal", signal.ID),
+			Kind:      "signal",
+			Content:   fmt.Sprintf("kind=%s channel=%s id=%s", signal.Kind, signal.Channel, signal.ID),
+			Scope:     "event",
+			SubjectID: signal.ID,
+			Predicate: "received_on",
+			Value:     signal.Channel,
+			Weight:    0.9,
+			Meta: map[string]string{
+				"signalId":       signal.ID,
+				"organizationId": signal.OrganizationID,
+				"scale":          "event",
+			},
 		},
 		{
-			Kind:    "ledger_sequence",
-			Content: fmt.Sprintf("%d", obs.LedgerSequence),
-			Weight:  0.5,
+			ID:        stableAtomID("ledger_sequence", fmt.Sprintf("%d", obs.LedgerSequence)),
+			Kind:      "ledger_sequence",
+			Content:   fmt.Sprintf("%d", obs.LedgerSequence),
+			Scope:     "office",
+			SubjectID: obs.OrganizationID,
+			Predicate: "ledger_sequence",
+			Value:     fmt.Sprintf("%d", obs.LedgerSequence),
+			Weight:    0.5,
+			Meta: map[string]string{
+				"organizationId": obs.OrganizationID,
+				"scale":          "office",
+			},
 		},
 	}
 
 	for _, task := range obs.PendingTasks {
 		atoms = append(atoms, gistAtom{
-			Kind:    "pending_task",
-			Content: fmt.Sprintf("id=%s status=%s", task.ID, task.Status),
-			Weight:  0.8,
+			ID:        stableAtomID("pending_task", task.ID),
+			Kind:      "pending_task",
+			Content:   fmt.Sprintf("id=%s status=%s", task.ID, task.Status),
+			Scope:     "office",
+			SubjectID: task.ID,
+			Predicate: "has_status",
+			Value:     task.Status,
+			Weight:    0.8,
+			Meta: map[string]string{
+				"taskId":         task.ID,
+				"organizationId": obs.OrganizationID,
+				"scale":          "office",
+			},
 		})
 	}
 
 	for k, v := range signal.Payload {
 		atoms = append(atoms, gistAtom{
-			Kind:    "signal_payload",
-			Content: fmt.Sprintf("%s=%s", k, v),
-			Weight:  0.7,
+			ID:        stableAtomID("signal_payload", signal.ID, k, v),
+			Kind:      "signal_payload",
+			Content:   fmt.Sprintf("%s=%s", k, v),
+			Scope:     "event",
+			SubjectID: signal.ID,
+			Predicate: k,
+			Value:     v,
+			Weight:    0.7,
+			Meta: map[string]string{
+				"signalId":       signal.ID,
+				"payloadKey":     k,
+				"organizationId": signal.OrganizationID,
+				"scale":          "event",
+			},
 		})
 	}
 
 	if g.latticeJSON != "" && g.latticeJSON != "{}" {
 		atoms = append(atoms, gistAtom{
-			Kind:    "lattice_state",
-			Content: g.latticeJSON,
-			Weight:  0.6,
+			ID:        stableAtomID("lattice_state", g.agentID, g.latticeJSON),
+			Kind:      "lattice_state",
+			Content:   g.latticeJSON,
+			Scope:     "office",
+			SubjectID: g.agentID,
+			Predicate: "has_prior_lattice",
+			Weight:    0.6,
+			Meta: map[string]string{
+				"agentId": g.agentID,
+				"scale":   "office",
+			},
 		})
 	}
 
@@ -143,9 +210,11 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 	}
 
 	input := gistSubprocessInput{
-		AgentID: g.agentID,
-		Atoms:   atoms,
-		Budget:  g.budget,
+		AgentID:        g.agentID,
+		OrganizationID: organizationIDFromAtoms(atoms),
+		Scope:          gistScopeFromAtoms(g.agentID, atoms),
+		Atoms:          atoms,
+		Budget:         g.budget,
 	}
 	payload, err := json.Marshal(input)
 	if err != nil {
@@ -184,11 +253,21 @@ func (g *GISTAgentCore) Compress(ctx context.Context, atoms []gistAtom) (GISTVer
 	}
 
 	verdict := GISTVerdict{
-		Verdict:         out.Verdict,
-		Confidence:      out.Confidence,
-		CausalChain:     out.CausalChain,
-		OpenQuestions:   out.OpenQuestions,
-		ExecutionIntent: out.ExecutionIntent,
+		Verdict:             out.Verdict,
+		Confidence:          out.Confidence,
+		CausalChain:         out.CausalChain,
+		OpenQuestions:       out.OpenQuestions,
+		ExecutionIntent:     out.ExecutionIntent,
+		Intent:              out.Intent,
+		RiskLevel:           out.RiskLevel,
+		RequiredTools:       out.RequiredTools,
+		Lattice:             out.Lattice,
+		Trace:               out.Trace,
+		Proof:               out.Proof,
+		Contradictions:      out.Contradictions,
+		Interventions:       out.Interventions,
+		Counterfactuals:     out.Counterfactuals,
+		ConfidenceBreakdown: out.ConfidenceBreakdown,
 	}
 	return verdict, lattice, nil
 }
@@ -247,17 +326,83 @@ func (g *GISTAgentCore) subprocessAvailable() bool {
 
 func (g *GISTAgentCore) defaultVerdict(reason string) GISTVerdict {
 	return GISTVerdict{
-		Verdict:         "proceed_with_caution",
+		Verdict:         "degraded_gist_unavailable",
 		Confidence:      0.1,
 		CausalChain:     []string{reason},
-		OpenQuestions:   nil,
+		OpenQuestions:   []string{"GIST subprocess is unavailable; causal lattice was not updated."},
 		ExecutionIntent: "default_low_confidence",
+		RiskLevel:       "unknown",
+		Degraded:        true,
+		DegradedReason:  reason,
+		Trace: &GISTTrace{
+			ID:            stableAtomID("degraded", g.agentID, reason),
+			AgentID:       g.agentID,
+			Scope:         GISTScopeRef{Kind: "degraded", AgentID: g.agentID},
+			SelectedChain: []string{reason},
+			ReplayHandle:  "degraded:" + reason,
+			CreatedAt:     time.Now().UnixMilli(),
+		},
 	}
 }
 
 // GISTScriptPath returns the conventional path to the GIST subprocess script.
 func GISTScriptPath(baseDir string) string {
+	if envPath := strings.TrimSpace(os.Getenv("AGENCY_GIST_SCRIPT_PATH")); envPath != "" {
+		return envPath
+	}
+	candidates := []string{
+		filepath.Join("scripts", "gist_subprocess.py"),
+		filepath.Join(baseDir, "scripts", "gist_subprocess.py"),
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append([]string{filepath.Join(cwd, "scripts", "gist_subprocess.py")}, candidates...)
+		for dir := cwd; dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
+			candidates = append(candidates, filepath.Join(dir, "scripts", "gist_subprocess.py"))
+		}
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
 	return filepath.Join(baseDir, "scripts", "gist_subprocess.py")
+}
+
+func stableAtomID(parts ...string) string {
+	h := sha256.New()
+	for _, part := range parts {
+		_, _ = h.Write([]byte(part))
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("atom_%x", h.Sum(nil))[:21]
+}
+
+func officeGISTLatticeKey(orgID string) string {
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" {
+		orgID = "default"
+	}
+	return "office:" + orgID
+}
+
+func organizationIDFromAtoms(atoms []gistAtom) string {
+	for _, atom := range atoms {
+		if atom.Meta != nil && strings.TrimSpace(atom.Meta["organizationId"]) != "" {
+			return atom.Meta["organizationId"]
+		}
+	}
+	return ""
+}
+
+func gistScopeFromAtoms(agentID string, atoms []gistAtom) GISTScopeRef {
+	orgID := organizationIDFromAtoms(atoms)
+	return GISTScopeRef{
+		Kind:           "agent_local",
+		OrganizationID: orgID,
+		AgentID:        agentID,
+		ParentKind:     "office_fractal",
+		ParentID:       officeGISTLatticeKey(orgID),
+	}
 }
 
 // LatticeStore is the persistence interface for per-agent GIST lattice state.
