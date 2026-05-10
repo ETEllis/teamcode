@@ -37,32 +37,27 @@ type CredentialBroker struct {
 
 // NewCredentialBroker probes the environment for known provider API keys.
 func NewCredentialBroker() *CredentialBroker {
-	probes := []struct {
-		provider string
-		envKey   string
-		modelID  string
-	}{
-		{"codex", "", "codex-cli"}, // auth via ~/.codex/auth.json — Available() does real check
-		{"anthropic", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001"},
-		{"openai", "OPENAI_API_KEY", "gpt-4o-mini"},
-		{"gemini", "GEMINI_API_KEY", "gemini-2.0-flash"},
-		{"ollama", "", "llama3.2"},
-	}
-
-	handles := make([]CredentialHandle, 0, len(probes))
-	for _, p := range probes {
+	profiles := BuiltinProviderProfiles()
+	handles := make([]CredentialHandle, 0, len(profiles))
+	for _, p := range profiles {
+		if p.Adapter && p.Name == "litellm" && strings.TrimSpace(os.Getenv(p.BaseURLEnv)) == "" {
+			// LiteLLM is useful only when a local or hosted proxy URL is supplied.
+			continue
+		}
 		status := "valid"
-		if p.envKey != "" {
-			if strings.TrimSpace(os.Getenv(p.envKey)) == "" {
+		if p.APIKeyEnv != "" && !p.Local {
+			if strings.TrimSpace(os.Getenv(p.APIKeyEnv)) == "" {
 				status = "missing"
 			}
 		}
-		// Ollama is local — always "valid" from credential perspective.
+		if p.Kind == "openai-compatible" && p.DefaultBaseURL == "" && strings.TrimSpace(os.Getenv(p.BaseURLEnv)) == "" {
+			status = "missing"
+		}
 		handles = append(handles, CredentialHandle{
-			Provider: p.provider,
-			KeyRef:   p.envKey,
+			Provider: p.Name,
+			KeyRef:   p.APIKeyEnv,
 			Status:   status,
-			ModelID:  p.modelID,
+			ModelID:  firstEnvValue(p.ModelEnv, p.DefaultModel),
 		})
 	}
 	return &CredentialBroker{handles: handles}
@@ -130,7 +125,7 @@ func (r *ModelRouter) Route(ctx context.Context, req InferenceRequest) (Provider
 		}
 
 		// Gate 3: privacy — if local-only policy, reject cloud providers.
-		if r.policy.PrivacyLevel == "local" && name != "ollama" {
+		if r.policy.PrivacyLevel == "local" && !isLocalProvider(name) {
 			rejected = append(rejected, name+":privacy_gate")
 			continue
 		}
@@ -185,13 +180,13 @@ func (r *ModelRouter) score(adapter ProviderAdapter, req InferenceRequest) float
 	name := adapter.Name()
 
 	// Local-first bonus.
-	if r.policy.PreferLocal && name == "ollama" {
+	if r.policy.PreferLocal && isLocalProvider(name) {
 		score += 10.0
 	}
 
 	// Latency alignment: prefer fast providers for low-latency requests.
 	if req.Intent.LatencyBudgetMs > 0 && req.Intent.LatencyBudgetMs < 2000 {
-		if name == "ollama" {
+		if isLocalProvider(name) {
 			score += 3.0
 		}
 	}
@@ -205,4 +200,9 @@ func (r *ModelRouter) score(adapter ProviderAdapter, req InferenceRequest) float
 	}
 
 	return score
+}
+
+func isLocalProvider(name string) bool {
+	profile, ok := profileByName(name)
+	return ok && profile.Local
 }

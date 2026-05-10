@@ -9,3 +9,4 @@ office:    ./dist/agency-office-daemon
 runtime:   ./dist/agency-runtime-daemon
 scheduler: ./dist/agency-scheduler-daemon
 ipc:       ./dist/agency-ipc-server
+director:  ./dist/agency-director-daemon

@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	agencyrt "github.com/ETEllis/teamcode/internal/agency"
@@ -30,6 +32,7 @@ func newAgencyCmd() *cobra.Command {
 		newAgencyConstitutionCmd(),
 		newAgencySwitchCmd(),
 		newAgencyVoiceCmd(),
+		newAgencyDirectorCmd(),
 	)
 
 	return cmd
@@ -563,6 +566,202 @@ func newAgencyVoiceCmd() *cobra.Command {
 	)
 
 	return cmd
+}
+
+func newAgencyDirectorCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "director",
+		Short: "Talk to and inspect the minimal personal Director agent",
+		Long:  "Director is the Pi-like personal agent that watches Agency, opens tickets, dispatches work, and exposes the local web portal.",
+	}
+	cmd.AddCommand(
+		newAgencyDirectorStatusCmd(),
+		newAgencyDirectorMonitorCmd(),
+		newAgencyDirectorSubmitCmd(),
+		newAgencyDirectorServeCmd(),
+	)
+	return cmd
+}
+
+func newAgencyDirectorStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Inspect Director agent status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			director, cleanup, err := bootstrapDirectorService(cmd)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			status, err := director.Status(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if rendered, err := outputJSON(cmd, status); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			fmt.Printf("Director: %s (%s)\n", status.Agent.Name, status.Agent.ID)
+			fmt.Printf("Organization: %s\n", status.OrganizationID)
+			fmt.Printf("Open tickets: %d\n", status.OpenTickets)
+			fmt.Printf("Dispatched: %d\n", status.Dispatched)
+			fmt.Printf("Pending approvals: %d\n", status.PendingApprovals)
+			fmt.Printf("Ledger sequence: %d\n", status.LedgerSequence)
+			if status.LastEvent != nil {
+				fmt.Printf("Last event: %s\n", status.LastEvent.Message)
+			}
+			return nil
+		},
+	}
+	addJSONFlag(cmd)
+	return cmd
+}
+
+func newAgencyDirectorMonitorCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "monitor",
+		Short: "Run one Director monitoring pass",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			director, cleanup, err := bootstrapDirectorService(cmd)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			status, err := director.Monitor(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if rendered, err := outputJSON(cmd, status); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			if status.LastEvent != nil {
+				fmt.Println(status.LastEvent.Message)
+			} else {
+				fmt.Println("Director monitor check complete.")
+			}
+			return nil
+		},
+	}
+	addJSONFlag(cmd)
+	return cmd
+}
+
+func newAgencyDirectorSubmitCmd() *cobra.Command {
+	var dispatch bool
+	var title string
+	var priority string
+	var risk string
+
+	cmd := &cobra.Command{
+		Use:   "submit [request]",
+		Short: "Open a Director ticket from the terminal",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			director, cleanup, err := bootstrapDirectorService(cmd)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			ticket, err := director.SubmitTicket(cmd.Context(), agencyrt.DirectorTicketRequest{
+				Title:        title,
+				Body:         args[0],
+				Source:       "director.cli",
+				Priority:     priority,
+				Risk:         risk,
+				AutoDispatch: dispatch,
+			})
+			if err != nil {
+				return err
+			}
+			if rendered, err := outputJSON(cmd, ticket); err != nil {
+				return err
+			} else if rendered {
+				return nil
+			}
+			fmt.Printf("Director ticket opened: %s\n", ticket.ID)
+			fmt.Printf("Title: %s\n", ticket.Title)
+			fmt.Printf("Status: %s\n", ticket.Status)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dispatch, "dispatch", false, "Dispatch the ticket into Agency immediately")
+	cmd.Flags().StringVar(&title, "title", "", "Ticket title")
+	cmd.Flags().StringVar(&priority, "priority", "normal", "Ticket priority")
+	cmd.Flags().StringVar(&risk, "risk", "unknown", "Ticket risk level")
+	addJSONFlag(cmd)
+	return cmd
+}
+
+func newAgencyDirectorServeCmd() *cobra.Command {
+	var addr string
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Serve the local Director web portal",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			director, cleanup, err := bootstrapDirectorService(cmd)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			if addr == "" {
+				addr = getenvForCmd("AGENCY_DIRECTOR_ADDR", "127.0.0.1:8765")
+			}
+			server := agencyrt.NewDirectorHTTPServer(agencyrt.DirectorHTTPConfig{
+				Addr:  addr,
+				Token: os.Getenv("AGENCY_DIRECTOR_TOKEN"),
+			}, director)
+			fmt.Printf("Agency Director portal: %s\n", directorPortalURL(server.URL(), os.Getenv("AGENCY_DIRECTOR_TOKEN")))
+			return server.Serve(cmd.Context())
+		},
+	}
+	cmd.Flags().StringVar(&addr, "addr", "", "HTTP listen address")
+	return cmd
+}
+
+func bootstrapDirectorService(cmd *cobra.Command) (*agencyrt.DirectorService, func(), error) {
+	cwd, _ := os.Getwd()
+	bootstrap, err := agencyrt.LoadBootstrap(cwd, os.Getenv("AGENCY_CONSTITUTION_NAME"), agencyrt.RuntimeModeEmbedded, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	svc, err := agencyrt.NewService(cmd.Context(), bootstrap.Config)
+	if err != nil {
+		return nil, nil, err
+	}
+	director, err := agencyrt.NewDirectorService(agencyrt.DirectorConfig{
+		BaseDir:         bootstrap.Config.BaseDir,
+		OrganizationID:  bootstrap.Constitution.OrganizationID,
+		SharedWorkplace: bootstrap.Config.SharedWorkplace,
+		Ledger:          svc.Ledger,
+		Bus:             svc.Bus,
+		Router: agencyrt.NewModelRouter(
+			agencyrt.BuiltinProviderAdaptersForDirector(),
+			agencyrt.NewCredentialBroker(),
+			agencyrt.ExecutionPolicy{PrivacyLevel: "any", PreferLocal: true},
+		),
+	})
+	if err != nil {
+		_ = svc.Shutdown(context.Background())
+		return nil, nil, err
+	}
+	return director, func() { _ = svc.Shutdown(context.Background()) }, nil
+}
+
+func getenvForCmd(key string, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func directorPortalURL(baseURL string, token string) string {
+	if token == "" {
+		return baseURL
+	}
+	return baseURL + "?token=" + token
 }
 
 func newOfficeVoiceCmd() *cobra.Command {

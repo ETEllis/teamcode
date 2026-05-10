@@ -65,6 +65,7 @@ const (
 	SignalBroadcast   SignalKind = "broadcast"
 	SignalVoice       SignalKind = "voice"
 	SignalProjection  SignalKind = "projection"
+	SignalDirector    SignalKind = "director"
 )
 
 type VoiceEventKind string
@@ -346,10 +347,10 @@ type ScheduleNode struct {
 
 // ScheduleLayerConfig configures defaults for a depth level in the schedule tree.
 type ScheduleLayerConfig struct {
-	LayerDepth              int    `json:"layerDepth"`
-	MaxNodes                int    `json:"maxNodes"`
-	DefaultExpression       string `json:"defaultExpression"`
-	InheritParentInjection  bool   `json:"inheritParentInjection"`
+	LayerDepth             int    `json:"layerDepth"`
+	MaxNodes               int    `json:"maxNodes"`
+	DefaultExpression      string `json:"defaultExpression"`
+	InheritParentInjection bool   `json:"inheritParentInjection"`
 }
 
 type RuntimeMode string

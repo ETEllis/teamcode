@@ -5,16 +5,18 @@ set -euo pipefail
 
 AUTO_LAUNCH=true
 SKIP_PROVIDER=false
+CONFIGURE_DIRECTOR=true
 
 usage() {
   cat <<'EOF'
-Usage: scripts/setup [--no-launch] [--skip-provider]
+Usage: scripts/setup [--no-launch] [--skip-provider] [--no-director]
 
 Checks dependencies, configures a provider, and builds Agency binaries.
 
 Options:
   --no-launch     Stop after building; print the local runtime commands instead
   --skip-provider Skip interactive provider configuration
+  --no-director   Skip Director token and portal configuration
   -h, --help      Show this help
 EOF
 }
@@ -26,6 +28,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-provider)
       SKIP_PROVIDER=true
+      ;;
+    --no-director)
+      CONFIGURE_DIRECTOR=false
       ;;
     -h|--help)
       usage
@@ -48,6 +53,14 @@ mkdir -p "$GOCACHE"
 
 ENV_FILE="$REPO_ROOT/.env"
 
+_save_env_key() {
+  local KEY_NAME="$1" KEY_VALUE="$2"
+  grep -v "^${KEY_NAME}=" "$ENV_FILE" 2>/dev/null > "$ENV_FILE.tmp" || true
+  echo "${KEY_NAME}=${KEY_VALUE}" >> "$ENV_FILE.tmp"
+  mv "$ENV_FILE.tmp" "$ENV_FILE"
+  export "${KEY_NAME}=${KEY_VALUE}"
+}
+
 # Ensure Homebrew and Go are in PATH early
 export PATH="$PATH:/usr/local/go/bin:/opt/homebrew/bin"
 
@@ -68,7 +81,7 @@ echo -e "${BOLD}/_/   \\_\\____|_____|_| \\_|\\____| |_|${RESET}"
 echo -e "${DIM}Agency — first-time setup${RESET}\n"
 
 # ── 1. Dependencies ───────────────────────────────────────────────────────────
-hdr "[1/4] Checking dependencies"
+hdr "[1/5] Checking dependencies"
 
 # Go
 if command -v go &>/dev/null; then
@@ -112,21 +125,29 @@ else
 fi
 
 # ── 2. Provider setup ─────────────────────────────────────────────────────────
-hdr "[2/4] AI provider configuration"
+hdr "[2/5] AI provider configuration"
 
 if $SKIP_PROVIDER; then
   warn "Skipping provider setup by request"
 else
 # Detect what's already configured
-ANTHROPIC_SET=false; OPENAI_SET=false; GEMINI_SET=false; CODEX_SET=false
+ANTHROPIC_SET=false; OPENAI_SET=false; GEMINI_SET=false; CODEX_SET=false; OPENROUTER_SET=false; OPENCODE_SET=false; ZEN_SET=false; GO_SET=false
 [ -n "${ANTHROPIC_API_KEY:-}" ] && ANTHROPIC_SET=true
 [ -n "${OPENAI_API_KEY:-}"    ] && OPENAI_SET=true
 [ -n "${GEMINI_API_KEY:-}"    ] && GEMINI_SET=true
+[ -n "${OPENROUTER_API_KEY:-}" ] && OPENROUTER_SET=true
+[ -n "${OPENCODE_BASE_URL:-}"  ] && OPENCODE_SET=true
+[ -n "${ZEN_BASE_URL:-}"       ] && ZEN_SET=true
+[ -n "${GO_BASE_URL:-}"        ] && GO_SET=true
 
 if [ -f "$ENV_FILE" ]; then
   grep -q "^ANTHROPIC_API_KEY=" "$ENV_FILE" 2>/dev/null && ANTHROPIC_SET=true
   grep -q "^OPENAI_API_KEY="    "$ENV_FILE" 2>/dev/null && OPENAI_SET=true
   grep -q "^GEMINI_API_KEY="    "$ENV_FILE" 2>/dev/null && GEMINI_SET=true
+  grep -q "^OPENROUTER_API_KEY=" "$ENV_FILE" 2>/dev/null && OPENROUTER_SET=true
+  grep -q "^OPENCODE_BASE_URL="  "$ENV_FILE" 2>/dev/null && OPENCODE_SET=true
+  grep -q "^ZEN_BASE_URL="       "$ENV_FILE" 2>/dev/null && ZEN_SET=true
+  grep -q "^GO_BASE_URL="        "$ENV_FILE" 2>/dev/null && GO_SET=true
 fi
 
 # Detect Codex: binary present + auth.json has an access_token
@@ -141,11 +162,15 @@ sys.exit(0 if t.strip() else 1)
   fi
 fi
 
-if $CODEX_SET || $ANTHROPIC_SET || $OPENAI_SET || $GEMINI_SET; then
+if $CODEX_SET || $ANTHROPIC_SET || $OPENAI_SET || $GEMINI_SET || $OPENROUTER_SET || $OPENCODE_SET || $ZEN_SET || $GO_SET; then
   $CODEX_SET     && ok "Codex — ChatGPT OAuth authenticated"
   $ANTHROPIC_SET && ok "ANTHROPIC_API_KEY set"
   $OPENAI_SET    && ok "OPENAI_API_KEY set"
   $GEMINI_SET    && ok "GEMINI_API_KEY set"
+  $OPENROUTER_SET && ok "OPENROUTER_API_KEY set"
+  $OPENCODE_SET  && ok "OPENCODE_BASE_URL set"
+  $ZEN_SET       && ok "ZEN_BASE_URL set"
+  $GO_SET        && ok "GO_BASE_URL set"
   echo ""
   read -r -p "  Add another provider? [y/N] " ANOTHER
   if [[ ! "$ANOTHER" =~ ^[Yy]$ ]]; then
@@ -161,16 +186,33 @@ if [ "${SKIP_PROVIDER:-false}" != "true" ]; then
   echo "  3) OpenAI        OPENAI_API_KEY      (gpt-5.4-mini, gpt-5.3-codex, gpt-5.4)"
   echo "  4) Gemini        GEMINI_API_KEY      (gemini-2.0-flash)"
   echo "  5) Ollama        no key needed       (local inference — llama3.2)"
-  echo "  6) Skip          I'll configure later"
+  echo "  6) OpenRouter    OPENROUTER_API_KEY"
+  echo "  7) OpenCode      OPENCODE_BASE_URL / OPENCODE_MODEL"
+  echo "  8) Zen           ZEN_BASE_URL / ZEN_MODEL"
+  echo "  9) Go            GO_BASE_URL / GO_MODEL"
+  echo " 10) LM Studio     no key by default     (local OpenAI-compatible server)"
+  echo " 11) Skip          I'll configure later"
   echo ""
-  read -r -p "  Enter 1–6: " CHOICE
+  read -r -p "  Enter 1–11: " CHOICE
 
-  _save_env_key() {
-    local KEY_NAME="$1" KEY_VALUE="$2"
-    grep -v "^${KEY_NAME}=" "$ENV_FILE" 2>/dev/null > "$ENV_FILE.tmp" || true
-    echo "${KEY_NAME}=${KEY_VALUE}" >> "$ENV_FILE.tmp"
-    mv "$ENV_FILE.tmp" "$ENV_FILE"
-    export "${KEY_NAME}=${KEY_VALUE}"
+  _configure_compatible_provider() {
+    local LABEL="$1" KEY_ENV="$2" BASE_ENV="$3" MODEL_ENV="$4" DEFAULT_MODEL="$5"
+    echo ""
+    echo "  $LABEL uses an OpenAI-compatible endpoint."
+    read -r -p "  Base URL: " BASE_URL
+    if [ -n "$BASE_URL" ]; then
+      _save_env_key "$BASE_ENV" "$BASE_URL"
+      ok "$BASE_ENV saved to .env"
+    fi
+    read -r -p "  API key (leave blank if local/no-auth): " API_KEY
+    if [ -n "$API_KEY" ]; then
+      _save_env_key "$KEY_ENV" "$API_KEY"
+      ok "$KEY_ENV saved to .env"
+    fi
+    read -r -p "  Model ID [default: $DEFAULT_MODEL]: " MODEL_ID
+    [ -z "$MODEL_ID" ] && MODEL_ID="$DEFAULT_MODEL"
+    _save_env_key "$MODEL_ENV" "$MODEL_ID"
+    ok "$MODEL_ENV=$MODEL_ID saved to .env"
   }
 
   case "$CHOICE" in
@@ -273,7 +315,32 @@ if [ "${SKIP_PROVIDER:-false}" != "true" ]; then
         echo "  Then run:  ollama pull llama3.2"
       fi
       ;;
-    6|*)
+    6)
+      read -r -p "  Paste your OpenRouter API key: " API_KEY
+      if [ -n "$API_KEY" ]; then
+        _save_env_key "OPENROUTER_API_KEY" "$API_KEY"
+        ok "OPENROUTER_API_KEY saved to .env"
+      fi
+      read -r -p "  OpenRouter model [default: openai/gpt-4o-mini]: " MODEL_ID
+      [ -z "$MODEL_ID" ] && MODEL_ID="openai/gpt-4o-mini"
+      _save_env_key "OPENROUTER_MODEL" "$MODEL_ID"
+      ok "OPENROUTER_MODEL=$MODEL_ID saved to .env"
+      ;;
+    7)
+      _configure_compatible_provider "OpenCode" "OPENCODE_API_KEY" "OPENCODE_BASE_URL" "OPENCODE_MODEL" "opencode/default"
+      ;;
+    8)
+      _configure_compatible_provider "Zen" "ZEN_API_KEY" "ZEN_BASE_URL" "ZEN_MODEL" "zen-default"
+      ;;
+    9)
+      _configure_compatible_provider "Go" "GO_API_KEY" "GO_BASE_URL" "GO_MODEL" "go-default"
+      ;;
+    10)
+      _save_env_key "LM_STUDIO_BASE_URL" "${LM_STUDIO_BASE_URL:-http://localhost:1234}"
+      _save_env_key "LM_STUDIO_MODEL" "${LM_STUDIO_MODEL:-local-model}"
+      ok "LM Studio profile saved to .env"
+      ;;
+    11|*)
       warn "Skipping provider setup — agents will not respond until one is configured"
       echo "  Run this script again to configure, or export a key manually."
       ;;
@@ -281,8 +348,36 @@ if [ "${SKIP_PROVIDER:-false}" != "true" ]; then
 fi
 fi
 
-# ── 3. Build ──────────────────────────────────────────────────────────────────
-hdr "[3/4] Building Agency"
+# ── 3. Director setup ─────────────────────────────────────────────────────────
+hdr "[3/5] Director agent"
+
+if $CONFIGURE_DIRECTOR; then
+  DIRECTOR_ADDR="${AGENCY_DIRECTOR_ADDR:-127.0.0.1:8765}"
+  if [ -f "$ENV_FILE" ] && grep -q "^AGENCY_DIRECTOR_ADDR=" "$ENV_FILE" 2>/dev/null; then
+    DIRECTOR_ADDR="$(grep "^AGENCY_DIRECTOR_ADDR=" "$ENV_FILE" | tail -1 | cut -d= -f2-)"
+  else
+    _save_env_key "AGENCY_DIRECTOR_ADDR" "$DIRECTOR_ADDR"
+  fi
+
+  if [ -f "$ENV_FILE" ] && grep -q "^AGENCY_DIRECTOR_TOKEN=" "$ENV_FILE" 2>/dev/null; then
+    ok "Director token already configured"
+  else
+    DIRECTOR_TOKEN="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(24))
+PY
+)"
+    _save_env_key "AGENCY_DIRECTOR_TOKEN" "$DIRECTOR_TOKEN"
+    ok "Director token saved to .env"
+  fi
+  _save_env_key "AGENCY_DIRECTOR_MONITOR_INTERVAL_SECONDS" "${AGENCY_DIRECTOR_MONITOR_INTERVAL_SECONDS:-300}"
+  ok "Director portal configured at http://$DIRECTOR_ADDR"
+else
+  warn "Skipping Director configuration by request"
+fi
+
+# ── 4. Build ──────────────────────────────────────────────────────────────────
+hdr "[4/5] Building Agency"
 echo "  Building compatibility binary..."
 go build -o teamcode .
 ok "teamcode binary built"
@@ -295,8 +390,8 @@ echo "  Building daemons..."
 scripts/build-daemons
 ok "all daemons built (dist/)"
 
-# ── 4. Launch ─────────────────────────────────────────────────────────────────
-hdr "[4/4] Launching Agency"
+# ── 5. Launch ─────────────────────────────────────────────────────────────────
+hdr "[5/5] Launching Agency"
 echo ""
 
 if ! $AUTO_LAUNCH; then
@@ -307,6 +402,9 @@ if ! $AUTO_LAUNCH; then
   echo ""
   echo "  In another shell, run:"
   echo "    ./agency"
+  echo ""
+  echo "  Director portal:"
+  echo "    ./agency agency director serve"
   echo ""
   echo "  Smoke IPC after Redis is running:"
   echo "    scripts/release-smoke --live"

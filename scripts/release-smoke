@@ -110,6 +110,7 @@ office:    env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE
 runtime:   env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-runtime-daemon
 scheduler: env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-scheduler-daemon
 ipc:       env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 ./dist/agency-ipc-server
+director:  env AGENCY_ORG_ID=$OVERMIND_SMOKE_ORG AGENCY_BASE_DIR=$OVERMIND_SMOKE_BASE AGENCY_REDIS_ADDR=localhost:6379 AGENCY_DIRECTOR_ADDR=127.0.0.1:0 ./dist/agency-director-daemon
 EOF
 }
 
@@ -124,7 +125,7 @@ text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
 bad_words = ("stopped", "exited", "dead", "crash", "failed", "error")
 missing = []
 
-for process in ("redis", "office", "runtime", "scheduler", "ipc"):
+for process in ("redis", "office", "runtime", "scheduler", "ipc", "director"):
     pattern = re.compile(r"(^|[^A-Za-z0-9_-])" + re.escape(process) + r"([^A-Za-z0-9_-]|$)", re.I)
     lines = [line for line in text.splitlines() if pattern.search(line)]
     if not lines:

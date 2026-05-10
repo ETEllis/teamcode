@@ -29,8 +29,9 @@ scripts/demo-local-office
 ### What You Get
 
 - A terminal command center for a staffed AI office.
+- A minimal Pi-like Director agent for daily intake, status, nudges, and remote-ready web check-ins.
 - Local Redis + Overmind runtime with office, scheduler, actor, runtime, and IPC daemons.
-- Provider routing across Codex, Anthropic, OpenAI, Gemini, and Ollama.
+- Provider routing across Codex, Anthropic, OpenAI, Gemini, Ollama, OpenRouter, OpenCode models, Zen, Go, LM Studio, and other OpenAI-compatible profiles.
 - Human approval lanes for proposed actions.
 - A bulletin board and append-only ledger for auditability.
 - A 30-second demo loop that shows wake, routing, bulletin, approval, and ledger transcript flow without API keys.
@@ -55,13 +56,14 @@ demo branch.
 |------|--------|
 | Terminal CLI/TUI | V1 shipped |
 | Local runtime | V1 shipped: Redis + Overmind + office/runtime/scheduler/actor/IPC daemons |
-| Provider routing | V1 shipped: Codex, Anthropic, OpenAI, Gemini, Ollama |
+| Director agent | V1.1 shipped: local personal agent, web portal, ticket intake, monitor wakes |
+| Provider routing | V1.1 shipped: Codex, Anthropic, OpenAI, Gemini, Ollama, OpenRouter, OpenCode, Zen, Go, LM Studio, and expandable profiles |
 | Approvals, bulletin, ledger | V1 shipped |
 | Installer and release proof | V1 shipped and verified by `scripts/live-release-proof` |
 | Voice | V1 optional fallback; V2 product-quality voice layer |
 | Docker Compose | V1 optional packaging; V2 hardening/parity path |
 | macOS desktop | V2 companion app |
-| Remote clients / web dashboard | V3 expansion path |
+| Remote clients / web dashboard | V1.1 local Director portal; V2/V3 native mobile, desktop, push, and hardened remote access |
 
 For release evidence, rerun the live local-process gates from a normal Terminal
 session to create a fresh proof bundle:
@@ -90,8 +92,8 @@ Agency uses a command-center palette: Ledger Ink `#101114`, Signal Gold `#E2B76D
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  USER LAYER                                              │
-│  TUI iMessage bubbles · Optional Voice · Approval        │
-│  lane · Bulletin board · Genesis wizard                  │
+│  Director portal · TUI iMessage bubbles · Optional       │
+│  Voice · Approval lane · Bulletin board · Genesis wizard │
 └────────────────────────┬────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────┐
@@ -113,7 +115,7 @@ Agency uses a command-center palette: Ledger Ink `#101114`, Signal Gold `#E2B76D
                          │ ActionIntent
 ┌────────────────────────▼────────────────────────────────┐
 │  MODEL ROUTING LAYER                                     │
-│  ModelRouter · CredentialBroker · 5 provider adapters    │
+│  ModelRouter · CredentialBroker · provider profiles      │
 │  5 hard gates (capability/auth/privacy/tools/budget)     │
 │  Ollama-first soft scoring                               │
 └────────────────────────┬────────────────────────────────┘
@@ -135,7 +137,7 @@ WakeSignal → GIST/ReasoningCore → ActionIntent → ModelRouter → ProviderA
 |-------|-------------|
 | **1 — Live Agent Foundation** | DB poll scheduler, broadcast→TUI pipeline, env config, optional voice via Kokoro or macOS `say` fallback |
 | **2 — GIST Cognitive Layer** | `GISTAgentCore`, causal compression, `ElasticStretch`, `LatticeStore`, per-wake lattice persistence |
-| **3 — Model Routing Layer** | `ModelRouter` (5 hard gates + soft scoring), `CredentialBroker`, Codex/Anthropic/Ollama/OpenAI/Gemini adapters, routing audit log |
+| **3 — Model Routing Layer** | `ModelRouter` (5 hard gates + soft scoring), `CredentialBroker`, Codex/Anthropic/Ollama/OpenAI/Gemini plus OpenAI-compatible provider profiles, routing audit log |
 | **4 — Core TUI Experience** | iMessage-style bubbles (per-actor color + avatar + timestamp), TTS voice on broadcast, `ApprovalCmp` panel (a/r keys, auto right-rail), approval channel + vote relay |
 | **5 — Nested Temporal Orchestration** | `ScheduleNode` tree with `prompt_injection`, `NestedScheduler`, `PerformanceRecord`, bulletin timeline (directive→output→score), daemon wired: directive → 1.5-weight GIST atom + performance publish |
 
@@ -171,6 +173,7 @@ available, or when Homebrew/Linuxbrew is installed.
 | `internal/tui/` | Terminal command-center UI, splash, approval lane, and themes |
 | `scripts/` | Setup, daemon build, smoke tests, live proof, and verifier scripts |
 | `docs/DEMO.md` | Guided local demo path for cold visitors |
+| `docs/DIRECTOR.md` | Director agent, portal, monitoring, and provider profile notes |
 | `Procfile` | Local Redis + office + runtime + scheduler + IPC process graph |
 | `Dockerfile.agency`, `docker-compose.agency.yml` | Optional packaging path, not required for the default local install |
 | `AGENCY_BLUEPRINT.md` | Architecture reference |
@@ -183,7 +186,7 @@ available, or when Homebrew/Linuxbrew is installed.
 - Redis (for the local multi-process office runtime)
 - Overmind (for running the local `Procfile`)
 - Python 3.9+ with `kokoro-onnx` only if you want higher-quality local voice; macOS `say` is the no-extra-dependency fallback
-- Codex CLI authenticated with `codex login`, an API key for at least one hosted provider (Anthropic, OpenAI, Gemini), **or** Ollama running locally
+- Codex CLI authenticated with `codex login`, an API key for at least one hosted provider, **or** a local/provider profile such as Ollama, LM Studio, OpenCode, Zen, or Go
 - Docker is not required for the default terminal release path
 
 ### Voice In V1
@@ -213,6 +216,24 @@ export ANTHROPIC_API_KEY=sk-...   # OPENAI_API_KEY, GEMINI_API_KEY, OLLAMA_API_B
 # Start the local office runtime (Redis + daemons + IPC)
 overmind start
 ```
+
+### Director agent
+
+The one-command installer also configures Director, a minimal personal agent for
+daily check-ins over the full Agency office. Director can open tickets, dispatch
+work, run passive monitor checks, and serve a local web portal:
+
+```bash
+agency agency director status
+agency agency director submit --dispatch "Prepare a release note for the current branch"
+agency agency director serve
+```
+
+By default the portal binds to `127.0.0.1:8765` and uses a generated
+`AGENCY_DIRECTOR_TOKEN` stored in `.env`. Remote access is intentionally opt-in:
+put it behind a tunnel or reverse proxy only when you are ready to secure it.
+
+More detail: [docs/DIRECTOR.md](docs/DIRECTOR.md).
 
 ### Release smoke
 

@@ -10,6 +10,7 @@
 #   AGENCY_INSTALL_ASSUME_YES=true
 #   AGENCY_INSTALL_SKIP_PROVIDER=true
 #   AGENCY_INSTALL_NO_LAUNCH=true
+#   AGENCY_INSTALL_NO_DIRECTOR=true
 set -euo pipefail
 
 APP_NAME="Agency"
@@ -20,6 +21,7 @@ BIN_DIR="$INSTALL_ROOT/bin"
 ASSUME_YES="${AGENCY_INSTALL_ASSUME_YES:-false}"
 SKIP_PROVIDER="${AGENCY_INSTALL_SKIP_PROVIDER:-false}"
 NO_LAUNCH="${AGENCY_INSTALL_NO_LAUNCH:-false}"
+NO_DIRECTOR="${AGENCY_INSTALL_NO_DIRECTOR:-false}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -52,6 +54,7 @@ Options:
   -y, --yes          Assume yes for dependency install prompts
   --skip-provider    Skip interactive provider setup
   --no-launch        Build only; do not launch the TUI after setup
+  --no-director      Skip Director token and portal configuration
   --dir DIR          Install root (default: $HOME/.agency)
   --repo URL         Git repo URL (default: $REPO_URL)
   -h, --help         Show this help
@@ -68,6 +71,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-launch)
       NO_LAUNCH=true
+      ;;
+    --no-director)
+      NO_DIRECTOR=true
       ;;
     --dir)
       shift
@@ -255,6 +261,9 @@ run_setup() {
   if [ "$SKIP_PROVIDER" = "true" ]; then
     setup_args+=(--skip-provider)
   fi
+  if [ "$NO_DIRECTOR" = "true" ]; then
+    setup_args+=(--no-director)
+  fi
   (cd "$SOURCE_DIR" && scripts/setup "${setup_args[@]}")
 
   ln -sf "$SOURCE_DIR/agency" "$BIN_DIR/agency"
@@ -279,6 +288,8 @@ finish() {
   printf "  %s\n" "$SOURCE_DIR"
   printf "\nStart the runtime:\n"
   printf "  cd %s && overmind start\n" "$SOURCE_DIR"
+  printf "\nDirector portal:\n"
+  printf "  cd %s && ./agency agency director serve\n" "$SOURCE_DIR"
   printf "\nRun the TUI:\n"
   printf "  agency\n"
   printf "\nVerify the release path:\n"

@@ -1,12 +1,13 @@
 # Agency Release Checklist
 
-Last updated: 2026-05-09
+Last updated: 2026-05-10
 
 ## Release Objective
 
-Ship Agency V1 as the terminal-first local office. Voice, desktop, Docker parity,
-and remote clients are framed as V2/V3 product layers rather than missing V1
-requirements.
+Ship Agency V1 as the terminal-first local office, now with the V1.1 Director
+agent as the local personal intake and monitoring layer. Voice, desktop, Docker
+parity, and native remote clients remain V2/V3 product layers rather than
+missing V1 requirements.
 
 ## Prompt-to-Artifact Audit
 
@@ -19,6 +20,8 @@ requirements.
 | Keep desktop as next path, not current blocker | README, HANDOFF, task plan | Desktop is explicitly next-lane work; release is terminal-first | Done |
 | Provide deterministic completion state | `RELEASE_CHECKLIST.md`, `scripts/live-release-proof`, `scripts/verify-release-proof` | Checklist maps gates to evidence; proof command writes manifest/logs and auto-verifies | Done |
 | Prove live Redis and Overmind runtime | `scripts/live-release-proof --log-dir .tmp/release-proof-terminal-attempt` from normal Terminal | Passed and verified; evidence in `.tmp/release-proof-terminal-attempt` | Done |
+| Add personal Director agent | `agency agency director ...`, `agency-director-daemon`, `docs/DIRECTOR.md` | Director opens tickets, dispatches structured wake signals, monitors Agency, and serves a local portal | Done |
+| Add 2026 provider profiles | `scripts/setup`, `internal/agency/provider_compatible.go` | OpenRouter, OpenCode, Zen, Go, LM Studio, LiteLLM, Mistral, xAI, Groq, and more profiles are configurable | Done |
 
 ## Decisions Locked
 
@@ -36,6 +39,8 @@ requirements.
 | One-command install is public | Done | Top-level `install` bootstraps dependencies, clones Agency, runs setup, and links `agency` into `~/.agency/bin` |
 | Demo path is public | Done | `docs/DEMO.md` and `scripts/demo-local-office` show the local office loop without API keys |
 | CI smoke path is public | Done | `.github/workflows/release-smoke.yml` runs static release smoke plus Redis IPC live smoke |
+| Director is local-first | Done | Portal defaults to `127.0.0.1:8765`; remote exposure is opt-in and token-gated |
+| OpenCode/Zen/Go are provider options | Done | Setup writes OPENCODE/ZEN/GO base URLs and model IDs as OpenAI-compatible provider profiles |
 
 ## Verified Gates
 
@@ -64,6 +69,10 @@ requirements.
 | Brand polish | README, `BRAND.md`, setup banner, TUI splash | Wordmark and palette are present |
 | Installer syntax | `bash -n install`; `./install --help` | Passed; installer exposes documented flags and parses cleanly |
 | Local office demo | `scripts/demo-local-office` | Passed; shows office creation, Redis/IPC broadcast, approval, bulletin, and demo ledger transcript |
+| Director unit tests | `go test ./internal/agency` | Passed |
+| Director daemon build | `scripts/build-daemons` | Passed; includes `dist/agency-director-daemon` |
+| Director CLI status | `./agency agency director status --json` | Passed; reports `personal-director` identity and current ledger state |
+| Director Overmind process | `scripts/release-smoke --with-overmind --skip-static` | Passed; Overmind status includes `director` running before IPC proof |
 
 ## Terminal Live Proof
 
@@ -85,8 +94,8 @@ Observed live proof:
   auto-ran `scripts/verify-release-proof .tmp/release-proof-terminal-attempt`.
 - Redis starts or is already reachable.
 - `scripts/test-ipc` receives broadcast, approval, and bulletin messages.
-- Overmind starts `redis`, `office`, `runtime`, `scheduler`, and `ipc`.
-- Overmind status reaches all five process names with no stopped/exited/failed markers before IPC proof runs.
+- Overmind starts `redis`, `office`, `runtime`, `scheduler`, `ipc`, and `director`.
+- Overmind status reaches all six process names with no stopped/exited/failed markers before IPC proof runs.
 - The Overmind IPC server listens on a short repo-local smoke socket path
   `.tmp/om-*/.agency/ipc-*.sock` to stay below macOS Unix socket path limits.
 
