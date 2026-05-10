@@ -329,6 +329,98 @@ def closures(active_slots: List[str], atoms: List[Dict[str, Any]], atom_slots: D
     return triads, dyads
 
 
+def build_causal_graph(
+    atoms: List[Dict[str, Any]],
+    selected_chain: List[str],
+    interventions: List[Dict[str, Any]],
+    contradictions: List[Dict[str, Any]],
+    verdict: str,
+    confidence: float,
+    trace_id: str,
+) -> Dict[str, Any]:
+    """Build the typed CausalGraph payload (protocol v1).
+
+    Mirrors the Go struct in internal/agency/causal_graph.go. Roles:
+
+      * outcome      - synthetic node anchoring the verdict.
+      * intervention - one node per do(action) candidate already
+                       produced by build_counterfactuals().
+      * confounder   - selected-chain atoms that show up inside an open
+                       contradiction (positive/negative tension).
+      * evidence     - everything else in the selected chain.
+    """
+    atom_by_id: Dict[str, Dict[str, Any]] = {}
+    for idx, atom in enumerate(atoms):
+        atom_by_id[atom_id(atom, idx)] = atom
+
+    confounder_atom_ids: set = set()
+    for contra in contradictions:
+        for aid in contra.get("atoms", []) or []:
+            confounder_atom_ids.add(aid)
+
+    nodes: List[Dict[str, Any]] = []
+    outcome_id = f"node_outcome_{trace_id[:12]}"
+    outcome_parents: List[str] = []
+
+    nodes.append(
+        {
+            "id": outcome_id,
+            "role": "outcome",
+            "summary": f"verdict={verdict}",
+            "parents": outcome_parents,  # appended below
+            "atomRefs": [],
+            "weight": float(confidence),
+            "meta": {"verdict": verdict},
+        }
+    )
+
+    for interv in interventions:
+        node_id = "node_" + str(interv.get("id") or stable_hash("intervention", interv, length=12))
+        outcome_parents.append(node_id)
+        action_atom_ref = interv.get("actionAtomRef") or ""
+        nodes.append(
+            {
+                "id": node_id,
+                "role": "intervention",
+                "summary": str(interv.get("do") or interv.get("label") or "do(action)"),
+                "parents": [],
+                "atomRefs": [action_atom_ref] if action_atom_ref else [],
+                "weight": float(interv.get("confidence") or 0.0),
+                "meta": {"label": str(interv.get("label", ""))},
+            }
+        )
+
+    for aid in selected_chain:
+        atom = atom_by_id.get(aid)
+        if atom is None:
+            continue
+        role = "confounder" if aid in confounder_atom_ids else "evidence"
+        node_id = f"node_{aid}"
+        outcome_parents.append(node_id)
+        weight = float(atom.get("weight") or 0.0)
+        summary = str(atom.get("content", ""))[:240]
+        meta = {"kind": str(atom.get("kind", ""))}
+        polarity_label = polarity(atom)
+        if polarity_label and polarity_label != "neutral":
+            meta["polarity"] = polarity_label
+        nodes.append(
+            {
+                "id": node_id,
+                "role": role,
+                "summary": summary,
+                "parents": [],
+                "atomRefs": [aid],
+                "weight": weight,
+                "meta": meta,
+            }
+        )
+
+    return {
+        "protocolVersion": 1,
+        "nodes": nodes,
+    }
+
+
 def main() -> int:
     raw = sys.stdin.read()
     payload = json.loads(raw or "{}")
@@ -464,10 +556,21 @@ def main() -> int:
     if not required_tools:
         open_questions.append("No concrete tool requirement was causally identified.")
 
+    causal_graph = build_causal_graph(
+        atoms=atoms,
+        selected_chain=trace["selectedChain"],
+        interventions=interventions,
+        contradictions=contradictions,
+        verdict=verdict,
+        confidence=confidence,
+        trace_id=trace_id,
+    )
+
     output = {
         "verdict": verdict,
         "confidence": confidence,
         "causalChain": trace["selectedChain"],
+        "causalGraph": causal_graph,
         "openQuestions": open_questions,
         "executionIntent": execution_intent,
         "intent": intent,
