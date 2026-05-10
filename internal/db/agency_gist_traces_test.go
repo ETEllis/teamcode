@@ -108,3 +108,58 @@ func TestAgencyGistTraceUpsertPreservesInspectorJSON(t *testing.T) {
 	require.Equal(t, `{"protocolVersion":1,"v":2}`, got.InspectorJSON)
 	require.Equal(t, int64(20), got.CreatedAt)
 }
+
+func TestAgencyGistTracePersistsSpeculativeJSON(t *testing.T) {
+	t.Setenv("AGENCY_DB_PATH", filepath.Join(t.TempDir(), "agency.db"))
+	conn, err := Connect()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	q := New(conn)
+	ctx := context.Background()
+
+	// Insert with explicit speculative_json: round-trips on Get + List.
+	specJSON := `{"protocolVersion":1,"cohortId":"cohort-1","convergence":{"status":"converged"}}`
+	require.NoError(t, q.InsertAgencyGistTrace(ctx, InsertAgencyGistTraceParams{
+		ID:              "spec-trace-1",
+		OfficeID:        "org-S",
+		AgentID:         "meta",
+		Verdict:         "review",
+		TraceJSON:       `{"id":"spec-trace-1"}`,
+		InspectorJSON:   `{"protocolVersion":1}`,
+		SpeculativeJSON: specJSON,
+		CreatedAt:       42,
+	}))
+
+	got, err := q.GetAgencyGistTrace(ctx, "spec-trace-1")
+	require.NoError(t, err)
+	require.Equal(t, specJSON, got.SpeculativeJSON)
+
+	rows, err := q.ListAgencyGistTracesByOffice(ctx, "org-S", 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, specJSON, rows[0].SpeculativeJSON)
+}
+
+func TestAgencyGistTraceDefaultsSpeculativeJSON(t *testing.T) {
+	t.Setenv("AGENCY_DB_PATH", filepath.Join(t.TempDir(), "agency.db"))
+	conn, err := Connect()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	q := New(conn)
+	ctx := context.Background()
+
+	// Empty SpeculativeJSON in params defaults to "{}" (NOT NULL satisfied).
+	require.NoError(t, q.InsertAgencyGistTrace(ctx, InsertAgencyGistTraceParams{
+		ID:        "spec-trace-default",
+		OfficeID:  "org-S",
+		AgentID:   "agent-S",
+		Verdict:   "approved",
+		TraceJSON: `{"id":"spec-trace-default"}`,
+		CreatedAt: 7,
+	}))
+	got, err := q.GetAgencyGistTrace(ctx, "spec-trace-default")
+	require.NoError(t, err)
+	require.Equal(t, "{}", got.SpeculativeJSON)
+}

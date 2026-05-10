@@ -36,7 +36,7 @@ func NewDirectorHTTPServer(cfg DirectorHTTPConfig, director *DirectorService) *D
 	// Lattice inspector (Phase 3, item #14). Renders typed CausalGraph
 	// + PearlPlan + Shapley attribution per persisted GIST trace.
 	mux.HandleFunc("/lattice", s.requireAuth(s.handleLatticeIndex))
-	mux.HandleFunc("/lattice/", s.requireAuth(s.handleLatticeView))
+	mux.HandleFunc("/lattice/", s.requireAuth(s.handleLatticeRouter))
 	mux.HandleFunc("/api/lattice", s.requireAuth(s.handleAPILatticeList))
 	mux.HandleFunc("/api/lattice/", s.requireAuth(s.handleAPILatticeView))
 	s.server = &http.Server{
@@ -70,6 +70,16 @@ func (s *DirectorHTTPServer) Serve(ctx context.Context) error {
 
 func (s *DirectorHTTPServer) URL() string {
 	return "http://" + s.cfg.Addr
+}
+
+// Handler returns the underlying http.Handler the server dispatches
+// from. Exposed so callers (notably the Phase 6 end-to-end test) can
+// drive the same routing surface that production traffic flows
+// through without spinning up a real listener. The returned handler
+// still includes requireAuth, so tests must either set Token to "" or
+// pass the configured token via header / query string.
+func (s *DirectorHTTPServer) Handler() http.Handler {
+	return s.server.Handler
 }
 
 func (s *DirectorHTTPServer) requireAuth(next http.HandlerFunc) http.HandlerFunc {

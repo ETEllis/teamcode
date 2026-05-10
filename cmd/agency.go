@@ -48,6 +48,7 @@ func newAgencyGISTCmd() *cobra.Command {
 	cmd.AddCommand(
 		newAgencyGISTTracesCmd(),
 		newAgencyGISTInspectCmd(),
+		newAgencyGISTSpeculativeCmd(),
 	)
 	return cmd
 }

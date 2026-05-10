@@ -8,19 +8,20 @@ import (
 )
 
 type InsertAgencyGistTraceParams struct {
-	ID              string
-	OfficeID        string
-	AgentID         string
-	Verdict         string
-	RiskLevel       string
-	Confidence      float64
-	TraceJSON       string
-	ProofJSON       string
-	LatticeJSON     string
-	InspectorJSON   string
-	InputHash       string
-	NextLatticeHash string
-	CreatedAt       int64
+	ID               string
+	OfficeID         string
+	AgentID          string
+	Verdict          string
+	RiskLevel        string
+	Confidence       float64
+	TraceJSON        string
+	ProofJSON        string
+	LatticeJSON      string
+	InspectorJSON    string
+	SpeculativeJSON  string
+	InputHash        string
+	NextLatticeHash  string
+	CreatedAt        int64
 }
 
 type AgencyGistTrace struct {
@@ -34,6 +35,7 @@ type AgencyGistTrace struct {
 	ProofJSON       string  `json:"proof_json"`
 	LatticeJSON     string  `json:"lattice_json"`
 	InspectorJSON   string  `json:"inspector_json"`
+	SpeculativeJSON string  `json:"speculative_json"`
 	InputHash       string  `json:"input_hash"`
 	NextLatticeHash string  `json:"next_lattice_hash"`
 	CreatedAt       int64   `json:"created_at"`
@@ -56,11 +58,15 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 	if arg.InspectorJSON == "" {
 		arg.InspectorJSON = "{}"
 	}
+	if arg.SpeculativeJSON == "" {
+		arg.SpeculativeJSON = "{}"
+	}
 	_, err := q.db.ExecContext(ctx,
 		`INSERT INTO agency_gist_traces (
 		   id, office_id, agent_id, verdict, risk_level, confidence, trace_json,
-		   proof_json, lattice_json, inspector_json, input_hash, next_lattice_hash, created_at
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   proof_json, lattice_json, inspector_json, speculative_json,
+		   input_hash, next_lattice_hash, created_at
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   verdict = excluded.verdict,
 		   risk_level = excluded.risk_level,
@@ -69,6 +75,7 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 		   proof_json = excluded.proof_json,
 		   lattice_json = excluded.lattice_json,
 		   inspector_json = excluded.inspector_json,
+		   speculative_json = excluded.speculative_json,
 		   input_hash = excluded.input_hash,
 		   next_lattice_hash = excluded.next_lattice_hash,
 		   created_at = excluded.created_at`,
@@ -82,6 +89,7 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 		arg.ProofJSON,
 		arg.LatticeJSON,
 		arg.InspectorJSON,
+		arg.SpeculativeJSON,
 		arg.InputHash,
 		arg.NextLatticeHash,
 		arg.CreatedAt,
@@ -94,7 +102,8 @@ func (q *Queries) InsertAgencyGistTrace(ctx context.Context, arg InsertAgencyGis
 func (q *Queries) GetAgencyGistTrace(ctx context.Context, id string) (AgencyGistTrace, error) {
 	row := q.db.QueryRowContext(ctx,
 		`SELECT id, office_id, agent_id, verdict, risk_level, confidence, trace_json,
-		        proof_json, lattice_json, inspector_json, input_hash, next_lattice_hash, created_at
+		        proof_json, lattice_json, inspector_json, speculative_json,
+		        input_hash, next_lattice_hash, created_at
 		   FROM agency_gist_traces
 		  WHERE id = ?`,
 		id,
@@ -111,6 +120,7 @@ func (q *Queries) GetAgencyGistTrace(ctx context.Context, id string) (AgencyGist
 		&item.ProofJSON,
 		&item.LatticeJSON,
 		&item.InspectorJSON,
+		&item.SpeculativeJSON,
 		&item.InputHash,
 		&item.NextLatticeHash,
 		&item.CreatedAt,
@@ -130,7 +140,8 @@ func (q *Queries) ListAgencyGistTracesByOffice(ctx context.Context, officeID str
 	}
 	rows, err := q.db.QueryContext(ctx,
 		`SELECT id, office_id, agent_id, verdict, risk_level, confidence, trace_json,
-		        proof_json, lattice_json, inspector_json, input_hash, next_lattice_hash, created_at
+		        proof_json, lattice_json, inspector_json, speculative_json,
+		        input_hash, next_lattice_hash, created_at
 		   FROM agency_gist_traces
 		  WHERE office_id = ?
 		  ORDER BY created_at DESC
@@ -157,6 +168,7 @@ func (q *Queries) ListAgencyGistTracesByOffice(ctx context.Context, officeID str
 			&item.ProofJSON,
 			&item.LatticeJSON,
 			&item.InspectorJSON,
+			&item.SpeculativeJSON,
 			&item.InputHash,
 			&item.NextLatticeHash,
 			&item.CreatedAt,
