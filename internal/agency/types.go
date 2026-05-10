@@ -574,6 +574,8 @@ type GISTVerdict struct {
 	ConfidenceBreakdown map[string]float64   `json:"confidenceBreakdown,omitempty"`
 	Degraded            bool                 `json:"degraded,omitempty"`
 	DegradedReason      string               `json:"degradedReason,omitempty"`
+	PearlPlan           *PearlPlan           `json:"pearlPlan,omitempty"`
+	Attribution         []NodeAttribution    `json:"attribution,omitempty"`
 }
 
 // SyncCausalChain reconciles the typed CausalGraph and the legacy
