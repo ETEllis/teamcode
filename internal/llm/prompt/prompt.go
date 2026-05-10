@@ -58,71 +58,76 @@ func getContextFromPaths() string {
 }
 
 func processContextPaths(workDir string, paths []string) string {
-	var (
-		wg       sync.WaitGroup
-		resultCh = make(chan string)
-	)
+	var wg sync.WaitGroup
 
-	// Track processed files to avoid duplicates
+	// Per-path result slices preserve user-specified order. Within a directory
+	// walk, filepath.WalkDir already returns entries in lexical order, so the
+	// concatenated output is fully deterministic across runs.
+	pathResults := make([][]string, len(paths))
+
+	// Track processed files to avoid duplicates (case-insensitive). When two
+	// paths refer to the same underlying file, the goroutine that wins the
+	// dedupe check captures it; user-specified order in the join below makes
+	// the final output stable for non-overlapping path sets.
 	processedFiles := make(map[string]bool)
 	var processedMutex sync.Mutex
 
-	for _, path := range paths {
+	for i, path := range paths {
 		wg.Add(1)
-		go func(p string) {
+		go func(idx int, p string) {
 			defer wg.Done()
+			var local []string
 
 			if strings.HasSuffix(p, "/") {
-				filepath.WalkDir(filepath.Join(workDir, p), func(path string, d os.DirEntry, err error) error {
+				filepath.WalkDir(filepath.Join(workDir, p), func(walkPath string, d os.DirEntry, err error) error {
 					if err != nil {
 						return err
 					}
-					if !d.IsDir() {
-						// Check if we've already processed this file (case-insensitive)
-						processedMutex.Lock()
-						lowerPath := strings.ToLower(path)
-						if !processedFiles[lowerPath] {
-							processedFiles[lowerPath] = true
-							processedMutex.Unlock()
+					if d.IsDir() {
+						return nil
+					}
+					processedMutex.Lock()
+					lowerPath := strings.ToLower(walkPath)
+					if processedFiles[lowerPath] {
+						processedMutex.Unlock()
+						return nil
+					}
+					processedFiles[lowerPath] = true
+					processedMutex.Unlock()
 
-							if result := processFile(path); result != "" {
-								resultCh <- result
-							}
-						} else {
-							processedMutex.Unlock()
-						}
+					if result := processFile(walkPath); result != "" {
+						local = append(local, result)
 					}
 					return nil
 				})
 			} else {
 				fullPath := filepath.Join(workDir, p)
-
-				// Check if we've already processed this file (case-insensitive)
 				processedMutex.Lock()
 				lowerPath := strings.ToLower(fullPath)
 				if !processedFiles[lowerPath] {
 					processedFiles[lowerPath] = true
 					processedMutex.Unlock()
-
-					result := processFile(fullPath)
-					if result != "" {
-						resultCh <- result
+					if result := processFile(fullPath); result != "" {
+						local = append(local, result)
 					}
 				} else {
 					processedMutex.Unlock()
 				}
 			}
-		}(path)
+
+			pathResults[idx] = local
+		}(i, path)
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
+	wg.Wait()
 
-	results := make([]string, 0)
-	for result := range resultCh {
-		results = append(results, result)
+	totalLen := 0
+	for _, sub := range pathResults {
+		totalLen += len(sub)
+	}
+	results := make([]string, 0, totalLen)
+	for _, sub := range pathResults {
+		results = append(results, sub...)
 	}
 
 	return strings.Join(results, "\n")
