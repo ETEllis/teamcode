@@ -72,6 +72,16 @@ func (s *DirectorHTTPServer) URL() string {
 	return "http://" + s.cfg.Addr
 }
 
+// Handler returns the underlying http.Handler the server dispatches
+// from. Exposed so callers (notably the Phase 6 end-to-end test) can
+// drive the same routing surface that production traffic flows
+// through without spinning up a real listener. The returned handler
+// still includes requireAuth, so tests must either set Token to "" or
+// pass the configured token via header / query string.
+func (s *DirectorHTTPServer) Handler() http.Handler {
+	return s.server.Handler
+}
+
 func (s *DirectorHTTPServer) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.cfg.Token == "" {
