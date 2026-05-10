@@ -1,6 +1,7 @@
 package agency
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -136,10 +137,10 @@ func TestCanonicalWeight_NaNAndInf(t *testing.T) {
 	if canonicalWeight(0) != "0.000000" {
 		t.Errorf("zero weight: got %q", canonicalWeight(0))
 	}
-	if got := canonicalWeight(1.0 / 0.0); got != "+Inf" {
+	if got := canonicalWeight(math.Inf(1)); got != "+Inf" {
 		t.Errorf("inf got %q", got)
 	}
-	if got := canonicalWeight(-1.0 / 0.0); got != "-Inf" {
+	if got := canonicalWeight(math.Inf(-1)); got != "-Inf" {
 		t.Errorf("-inf got %q", got)
 	}
 }
