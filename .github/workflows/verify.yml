@@ -37,53 +37,72 @@ jobs:
         run: |
           set +e
           mkdir -p _ci_out
-          echo "=== go env ==="            >  _ci_out/log.txt
-          go env GOVERSION GOMOD GOPATH    >> _ci_out/log.txt 2>&1
-          echo                             >> _ci_out/log.txt
-          echo "=== go mod download ==="   >> _ci_out/log.txt
-          go mod download                  >> _ci_out/log.txt 2>&1
-          echo "exit: $?"                  >> _ci_out/log.txt
-          echo                             >> _ci_out/log.txt
-          echo "=== go vet ./... ==="      >> _ci_out/log.txt
-          go vet ./...                     >> _ci_out/log.txt 2>&1
-          VET_EXIT=$?
-          echo "vet exit: $VET_EXIT"       >> _ci_out/log.txt
-          echo                             >> _ci_out/log.txt
-          echo "=== go build ./... ==="    >> _ci_out/log.txt
-          go build ./...                   >> _ci_out/log.txt 2>&1
-          BUILD_EXIT=$?
-          echo "build exit: $BUILD_EXIT"   >> _ci_out/log.txt
-          echo "VET_EXIT=$VET_EXIT"     >> $GITHUB_OUTPUT
-          echo "BUILD_EXIT=$BUILD_EXIT" >> $GITHUB_OUTPUT
-          # Tail of the log for the step summary
-          tail -200 _ci_out/log.txt >> $GITHUB_STEP_SUMMARY
+          {
+            echo "=== go env ==="
+            go env GOVERSION GOMOD GOPATH
+            echo
+            echo "=== go mod download ==="
+            go mod download
+            echo "mod-download exit: $?"
+            echo
+            echo "=== go vet ./... ==="
+            go vet ./... 2>&1
+            VET_EXIT=$?
+            echo "vet exit: $VET_EXIT"
+            echo
+            echo "=== go build ./... ==="
+            go build ./... 2>&1
+            BUILD_EXIT=$?
+            echo "build exit: $BUILD_EXIT"
+            echo "FINAL: vet=$VET_EXIT build=$BUILD_EXIT"
+          } > _ci_out/log.txt 2>&1
+          # Re-parse the exits from the log so they're not lost in the subshell
+          VET_EXIT=$(grep -oE "^vet exit: [0-9]+" _ci_out/log.txt | awk '{print $3}')
+          BUILD_EXIT=$(grep -oE "^build exit: [0-9]+" _ci_out/log.txt | awk '{print $3}')
+          echo "VET_EXIT=${VET_EXIT:-99}"     >> $GITHUB_OUTPUT
+          echo "BUILD_EXIT=${BUILD_EXIT:-99}" >> $GITHUB_OUTPUT
+          tail -400 _ci_out/log.txt >> $GITHUB_STEP_SUMMARY
           exit 0
 
       - name: mirror output to ci-output branch
         if: always()
         env:
-          BRANCH_SAFE: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          set -e
-          # Sanitise branch name for use as a ref segment
-          SAFE=$(echo "$BRANCH_SAFE" | tr '/' '-')
+          set -euo pipefail
+          SAFE=$(echo "$REF_NAME" | tr '/' '-')
           OUT_BRANCH="ci-output/$SAFE"
-          # Build a fresh orphan ref containing only the log
+          MIRROR_DIR=$(mktemp -d)
+          # COPY first so the file exists; cp may fail if the build step never ran.
+          if [ -f "$GITHUB_WORKSPACE/_ci_out/log.txt" ]; then
+            cp "$GITHUB_WORKSPACE/_ci_out/log.txt" "$MIRROR_DIR/log.txt"
+          else
+            echo "build step did not produce a log" > "$MIRROR_DIR/log.txt"
+          fi
+          {
+            echo "source_sha: $SHA"
+            echo "source_branch: $REF_NAME"
+            echo "run_id: $RUN_ID"
+            echo "run_attempt: $RUN_ATTEMPT"
+            echo "completed_at: $(date -Iseconds)"
+          } > "$MIRROR_DIR/meta.txt"
+          cd "$MIRROR_DIR"
+          git init -q -b "$OUT_BRANCH"
+          # config goes INSIDE the new repo
           git config user.email "verify-bot@agency.dev"
           git config user.name  "verify-bot"
-          mkdir -p /tmp/ci_mirror && cd /tmp/ci_mirror
-          git init -q -b "$OUT_BRANCH"
-          cp $GITHUB_WORKSPACE/_ci_out/log.txt ./log.txt
-          echo "source_sha: $GITHUB_SHA"         >  meta.txt
-          echo "source_branch: $GITHUB_REF_NAME" >> meta.txt
-          echo "run_id: $GITHUB_RUN_ID"          >> meta.txt
-          echo "run_attempt: $GITHUB_RUN_ATTEMPT" >> meta.txt
-          echo "completed_at: $(date -Iseconds)" >> meta.txt
           git add log.txt meta.txt
-          git commit -q -m "verify output for $GITHUB_SHA on $GITHUB_REF_NAME"
-          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git commit -q -m "verify output for $SHA on $REF_NAME"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           git push -f origin "HEAD:refs/heads/$OUT_BRANCH"
 
       - name: fail if vet or build failed
         if: steps.capture.outputs.VET_EXIT != '0' || steps.capture.outputs.BUILD_EXIT != '0'
-        run: exit 1
+        run: |
+          echo "verify failed: vet=${{ steps.capture.outputs.VET_EXIT }} build=${{ steps.capture.outputs.BUILD_EXIT }}"
+          exit 1
