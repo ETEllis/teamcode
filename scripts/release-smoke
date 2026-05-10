@@ -173,6 +173,7 @@ if $RUN_STATIC; then
   need go
   need python3
   bash -n scripts/setup scripts/install-voice scripts/test-ipc scripts/build-daemons scripts/release-smoke scripts/live-release-proof scripts/verify-release-proof
+  bash scripts/check_hidden_chars.sh
   go test ./...
   go build -o agency .
   scripts/build-daemons
