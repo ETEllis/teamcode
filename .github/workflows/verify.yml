@@ -1,6 +1,7 @@
-# Lightweight verifier: every push to any branch gets a `go vet` +
-# `go build` pass. Exists so downstream pulls always know whether the
-# branch tip compiles before they sync.
+# Verifier: runs `go vet` + `go build` on every push to any branch,
+# then mirrors the raw output to a force-pushed `ci-output/<branch>`
+# ref so anything (CLI, sandbox, automation) can read the result via
+# plain git fetch — no GitHub API needed.
 name: verify
 
 on:
@@ -14,16 +15,75 @@ concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/setup-go@v5
         with:
           go-version: '>=1.23.2'
           cache: true
           cache-dependency-path: go.sum
-      - run: go mod download
-      - run: go vet ./...
-      - run: go build ./...
+
+      - name: capture go vet + go build output
+        id: capture
+        run: |
+          set +e
+          mkdir -p _ci_out
+          echo "=== go env ==="            >  _ci_out/log.txt
+          go env GOVERSION GOMOD GOPATH    >> _ci_out/log.txt 2>&1
+          echo                             >> _ci_out/log.txt
+          echo "=== go mod download ==="   >> _ci_out/log.txt
+          go mod download                  >> _ci_out/log.txt 2>&1
+          echo "exit: $?"                  >> _ci_out/log.txt
+          echo                             >> _ci_out/log.txt
+          echo "=== go vet ./... ==="      >> _ci_out/log.txt
+          go vet ./...                     >> _ci_out/log.txt 2>&1
+          VET_EXIT=$?
+          echo "vet exit: $VET_EXIT"       >> _ci_out/log.txt
+          echo                             >> _ci_out/log.txt
+          echo "=== go build ./... ==="    >> _ci_out/log.txt
+          go build ./...                   >> _ci_out/log.txt 2>&1
+          BUILD_EXIT=$?
+          echo "build exit: $BUILD_EXIT"   >> _ci_out/log.txt
+          echo "VET_EXIT=$VET_EXIT"     >> $GITHUB_OUTPUT
+          echo "BUILD_EXIT=$BUILD_EXIT" >> $GITHUB_OUTPUT
+          # Tail of the log for the step summary
+          tail -200 _ci_out/log.txt >> $GITHUB_STEP_SUMMARY
+          exit 0
+
+      - name: mirror output to ci-output branch
+        if: always()
+        env:
+          BRANCH_SAFE: ${{ github.ref_name }}
+        run: |
+          set -e
+          # Sanitise branch name for use as a ref segment
+          SAFE=$(echo "$BRANCH_SAFE" | tr '/' '-')
+          OUT_BRANCH="ci-output/$SAFE"
+          # Build a fresh orphan ref containing only the log
+          git config user.email "verify-bot@agency.dev"
+          git config user.name  "verify-bot"
+          mkdir -p /tmp/ci_mirror && cd /tmp/ci_mirror
+          git init -q -b "$OUT_BRANCH"
+          cp $GITHUB_WORKSPACE/_ci_out/log.txt ./log.txt
+          echo "source_sha: $GITHUB_SHA"         >  meta.txt
+          echo "source_branch: $GITHUB_REF_NAME" >> meta.txt
+          echo "run_id: $GITHUB_RUN_ID"          >> meta.txt
+          echo "run_attempt: $GITHUB_RUN_ATTEMPT" >> meta.txt
+          echo "completed_at: $(date -Iseconds)" >> meta.txt
+          git add log.txt meta.txt
+          git commit -q -m "verify output for $GITHUB_SHA on $GITHUB_REF_NAME"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git push -f origin "HEAD:refs/heads/$OUT_BRANCH"
+
+      - name: fail if vet or build failed
+        if: steps.capture.outputs.VET_EXIT != '0' || steps.capture.outputs.BUILD_EXIT != '0'
+        run: exit 1
